@@ -16,7 +16,14 @@ import (
 const usage = `usage:
   farm run -config PATH
   farm validate -config PATH
+  farm version
 `
+
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -35,9 +42,20 @@ func run(args []string) error {
 		return runDaemon(args[1:])
 	case "validate":
 		return validate(args[1:])
+	case "version":
+		return showVersion(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}
+}
+
+func showVersion(args []string) error {
+	if len(args) != 0 {
+		return errors.New("version takes no arguments")
+	}
+
+	fmt.Printf("farm %s\ncommit: %s\nbuilt: %s\n", version, commit, date)
+	return nil
 }
 
 func validate(args []string) error {

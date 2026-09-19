@@ -1,0 +1,51 @@
+version: 2
+
+force_token: github
+
+before:
+  hooks:
+    - make web-build
+
+builds:
+  - id: farm
+    main: ./cmd/farm
+    binary: farm
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X main.version={{ .Version }}
+        -X main.commit={{ .Commit }}
+        -X main.date={{ .Date }}
+
+archives:
+  - ids:
+      - farm
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE
+      - farm.example.yaml
+      - packaging/farm.service
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
