@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">FARM icon</title>
+  <desc id="desc">Purple farm-shaped outline containing three large isometric instance cubes.</desc>
+
+  <defs>
+    <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#9B6BFF"/>
+      <stop offset="55%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#6D28D9"/>
+    </linearGradient>
+
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#A879FF"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+
+    <linearGradient id="left" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+
+    <linearGradient id="right" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#6D28D9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Farm / barn outline -->
+  <path
+    d="M180 742V392
+       Q180 345 220 320
+       L474 160
+       Q512 136 550 160
+       L804 320
+       Q844 345 844 392
+       V742"
+    fill="none"
+    stroke="url(#purple)"
+    stroke-width="76"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+  <!-- Top cube -->
+  <g>
+    <polygon points="512,308 620,368 512,428 404,368" fill="url(#top)"/>
+    <polygon points="404,368 512,428 512,556 404,496" fill="url(#left)"/>
+    <polygon points="512,428 620,368 620,496 512,556" fill="url(#right)"/>
+  </g>
+
+  <!-- Bottom-left cube -->
+  <g>
+    <polygon points="366,548 474,608 366,668 258,608" fill="url(#top)"/>
+    <polygon points="258,608 366,668 366,796 258,736" fill="url(#left)"/>
+    <polygon points="366,668 474,608 474,736 366,796" fill="url(#right)"/>
+  </g>
+
+  <!-- Bottom-right cube -->
+  <g>
+    <polygon points="658,548 766,608 658,668 550,608" fill="url(#top)"/>
+    <polygon points="550,608 658,668 658,796 550,736" fill="url(#left)"/>
+    <polygon points="658,668 766,608 766,736 658,796" fill="url(#right)"/>
+  </g>
+</svg>

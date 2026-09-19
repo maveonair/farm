@@ -1,0 +1,35 @@
+controller:
+  id: primary
+  database: /var/lib/farm/farm.db
+
+forgejo:
+  url: https://git.example.com
+  token_file: /etc/farm/forgejo-token
+  # ca_certificate_file: /etc/farm/forgejo-ca.crt
+
+incus:
+  endpoint: unix:///var/lib/incus/unix.socket
+  project: farm
+
+runner:
+  download_url: https://code.forgejo.org/forgejo/runner/releases/download/v13.0.0/forgejo-runner-13.0.0-linux-amd64
+  # Replace this placeholder with the binary's SHA-256 digest.
+  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+
+pools:
+  - name: ubuntu
+    scope:
+      type: repository
+      owner: example
+      repository: project
+    labels:
+      - farm-ubuntu
+    instance:
+      image: farm-ubuntu-24.04
+      profiles:
+        - farm-vm
+      config:
+        limits.cpu: "4"
+        limits.memory: 8GiB
+    scaling:
+      max_instances: 8

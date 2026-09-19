@@ -1,0 +1,22 @@
+[Unit]
+Description=Forgejo Actions Runner Manager
+After=network-online.target incus.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=farm
+Group=farm
+ExecStart=/usr/local/bin/farm run -config /etc/farm/farm.yaml
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/farm
+
+[Install]
+WantedBy=multi-user.target
