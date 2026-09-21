@@ -15,7 +15,7 @@ describe('App', () => {
   it.each([
     ['/pools/ubuntu', '/pools'],
     ['/instances/runner-1', '/instances'],
-  ])('highlights the section for %s', async (path, link) => {
+  ])('identifies the current section for %s', async (path, link) => {
     vi.spyOn(api, 'summary').mockRejectedValue(new Error('offline'))
     const router = createRouter({
       history: createMemoryHistory(),
@@ -26,6 +26,7 @@ describe('App', () => {
         { path: '/instances', component: View },
         { path: '/instances/:id', component: View },
         { path: '/activity', component: View },
+        { path: '/incidents', component: View },
       ],
     })
     await router.push(path)
@@ -37,7 +38,7 @@ describe('App', () => {
       },
     })
 
-    expect(wrapper.get(`a[href="${link}"]`).classes()).toContain('nav-section-active')
+    expect(wrapper.get(`a[href="${link}"]`).attributes('aria-current')).toBe('page')
     wrapper.unmount()
   })
 })

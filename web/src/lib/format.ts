@@ -1,3 +1,14 @@
+const shortIDLength = 12
+
+interface InstanceIdentity {
+  id?: string
+  name?: string
+}
+
+export function instanceLabel(instance: InstanceIdentity): string {
+  return instance.name || instance.id?.slice(0, shortIDLength) || 'Unknown instance'
+}
+
 export function relative(value?: string): string {
   if (!value) return 'Never'
   const seconds = Math.round((new Date(value).getTime() - Date.now()) / 1000)

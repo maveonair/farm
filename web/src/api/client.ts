@@ -98,6 +98,8 @@ export interface Incident {
   resolved_at?: string
 }
 
+export type IncidentStatus = 'open' | 'resolved'
+
 export interface Instance {
   id: string
   name: string
@@ -120,6 +122,7 @@ export interface Instance {
 export interface Event {
   id: number
   instance_id: string
+  instance_name: string
   pool: string
   kind: string
   from_state?: State

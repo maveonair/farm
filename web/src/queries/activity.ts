@@ -1,13 +1,14 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 
-import { api } from '@/api/client'
+import { api, type IncidentStatus } from '@/api/client'
 import { activityKeys } from '@/queries/keys'
 import { LIST_LIMIT, OVERVIEW_EVENT_LIMIT, POLL_INTERVAL_MS } from '@/queries/options'
 
-function params(pool: string, limit: number) {
+function params(pool: string, limit: number, status: IncidentStatus | '' = '') {
   const value = new URLSearchParams({ limit: String(limit) })
   if (pool) value.set('pool', pool)
+  if (status) value.set('status', status)
 
   return value
 }
@@ -34,15 +35,22 @@ export function useOverviewEventsQuery() {
   return useEventsQuery('', OVERVIEW_EVENT_LIMIT)
 }
 
-export function useIncidentsQuery(pool: MaybeRefOrGetter<string> = '') {
-  const filters = computed(() => ({ pool: toValue(pool), limit: LIST_LIMIT }))
+export function useIncidentsQuery(
+  pool: MaybeRefOrGetter<string> = '',
+  status: MaybeRefOrGetter<IncidentStatus | ''> = '',
+) {
+  const filters = computed(() => ({
+    pool: toValue(pool),
+    status: toValue(status),
+    limit: LIST_LIMIT,
+  }))
 
   return useQuery({
     queryKey: computed(() => activityKeys.incidents(filters.value)),
     queryFn: ({ queryKey, signal }) => {
       const query = queryKey[2]
 
-      return api.incidents(params(query.pool, query.limit), signal)
+      return api.incidents(params(query.pool, query.limit, query.status), signal)
     },
     placeholderData: keepPreviousData,
     refetchInterval: POLL_INTERVAL_MS,

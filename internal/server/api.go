@@ -54,17 +54,18 @@ type instanceResponse struct {
 }
 
 type eventResponse struct {
-	ID         int64           `json:"id"`
-	InstanceID string          `json:"instance_id"`
-	Pool       string          `json:"pool"`
-	Kind       store.EventKind `json:"kind"`
-	FromState  instance.State  `json:"from_state,omitempty"`
-	ToState    instance.State  `json:"to_state,omitempty"`
-	Stage      reconcile.Stage `json:"stage,omitempty"`
-	Result     instance.Result `json:"result,omitempty"`
-	Reason     instance.Reason `json:"reason,omitempty"`
-	Message    string          `json:"message,omitempty"`
-	CreatedAt  string          `json:"created_at"`
+	ID           int64           `json:"id"`
+	InstanceID   string          `json:"instance_id"`
+	InstanceName string          `json:"instance_name"`
+	Pool         string          `json:"pool"`
+	Kind         store.EventKind `json:"kind"`
+	FromState    instance.State  `json:"from_state,omitempty"`
+	ToState      instance.State  `json:"to_state,omitempty"`
+	Stage        reconcile.Stage `json:"stage,omitempty"`
+	Result       instance.Result `json:"result,omitempty"`
+	Reason       instance.Reason `json:"reason,omitempty"`
+	Message      string          `json:"message,omitempty"`
+	CreatedAt    string          `json:"created_at"`
 }
 
 type poolResponse struct {
@@ -354,7 +355,8 @@ func writeEvents(w http.ResponseWriter, r *http.Request, repository reader, filt
 	responses := make([]eventResponse, 0, len(events))
 	for _, event := range events {
 		responses = append(responses, eventResponse{
-			ID: event.ID, InstanceID: event.InstanceID, Pool: event.Pool, Kind: event.Kind,
+			ID: event.ID, InstanceID: event.InstanceID, InstanceName: event.InstanceName,
+			Pool: event.Pool, Kind: event.Kind,
 			FromState: event.FromState, ToState: event.ToState, Stage: event.Stage,
 			Result: event.Result, Reason: event.Reason, Message: event.Message,
 			CreatedAt: event.CreatedAt.UTC().Format(time.RFC3339),

@@ -16,7 +16,6 @@ const error = computed(() =>
 
 <template>
   <div class="mb-7">
-    <p class="eyebrow">Capacity</p>
     <h1 class="page-title mt-1">Pools</h1>
   </div>
   <ViewState :loading :error :empty="!pools.length">

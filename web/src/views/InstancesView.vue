@@ -51,7 +51,6 @@ const error = computed(() =>
 <template>
   <div class="mb-7 flex flex-wrap items-end justify-between gap-4">
     <div>
-      <p class="eyebrow">Inventory</p>
       <h1 class="page-title mt-1">Instances</h1>
     </div>
     <div class="flex gap-2">

@@ -1,3 +1,5 @@
+import type { IncidentStatus } from '@/api/client'
+
 export interface InstanceFilters {
   pool: string
   state: string
@@ -7,6 +9,10 @@ export interface InstanceFilters {
 export interface ActivityFilters {
   pool: string
   limit: number
+}
+
+export interface IncidentFilters extends ActivityFilters {
+  status: IncidentStatus | ''
 }
 
 export const summaryKey = ['summary'] as const
@@ -25,5 +31,5 @@ export const instanceKeys = {
 
 export const activityKeys = {
   events: (filters: ActivityFilters) => ['activity', 'events', filters] as const,
-  incidents: (filters: ActivityFilters) => ['activity', 'incidents', filters] as const,
+  incidents: (filters: IncidentFilters) => ['activity', 'incidents', filters] as const,
 }

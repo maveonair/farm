@@ -2,7 +2,7 @@
 import { RouterLink } from 'vue-router'
 
 import type { Incident } from '@/api/client'
-import { exact, relative } from '@/lib/format'
+import { exact, instanceLabel, relative } from '@/lib/format'
 import { lifecycleLabel } from '@/lib/lifecycle'
 
 defineProps<{ incident: Incident }>()
@@ -59,7 +59,7 @@ const hints: Record<string, string> = {
       :to="`/instances/${incident.instance_id}`"
       class="mt-3 inline-block font-medium underline"
     >
-      View {{ incident.instance_name || 'affected instance' }}
+      View {{ instanceLabel({ id: incident.instance_id, name: incident.instance_name }) }}
     </RouterLink>
   </section>
 </template>

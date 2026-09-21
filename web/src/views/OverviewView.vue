@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 
 import ReconcileStatus from '@/components/ReconcileStatus.vue'
 import ViewState from '@/components/ViewState.vue'
-import { relative } from '@/lib/format'
+import { instanceLabel, relative } from '@/lib/format'
 import { useOverviewEventsQuery } from '@/queries/activity'
 import { queryError } from '@/queries/options'
 import { usePoolsQuery } from '@/queries/pools'
@@ -31,7 +31,6 @@ const error = computed(
 <template>
   <div class="mb-7 flex items-end justify-between">
     <div>
-      <p class="eyebrow">Operations</p>
       <h1 class="page-title mt-1">Overview</h1>
     </div>
   </div>
@@ -117,7 +116,9 @@ const error = computed(
                 <RouterLink
                   :to="`/instances/${event.instance_id}`"
                   class="font-medium hover:underline"
-                  >{{ event.instance_id.slice(0, 12) }}</RouterLink
+                  >{{
+                    instanceLabel({ id: event.instance_id, name: event.instance_name })
+                  }}</RouterLink
                 >
                 <span class="text-slate-500 ml-1">{{ event.kind.replace('_', ' ') }}</span>
               </p>

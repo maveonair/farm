@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import ActivityView from '@/views/ActivityView.vue'
+import IncidentsView from '@/views/IncidentsView.vue'
 import InstanceView from '@/views/InstanceView.vue'
 import InstancesView from '@/views/InstancesView.vue'
 import OverviewView from '@/views/OverviewView.vue'
@@ -16,6 +17,7 @@ const router = createRouter({
     { path: '/instances', name: 'instances', component: InstancesView },
     { path: '/instances/:id', name: 'instance', component: InstanceView },
     { path: '/activity', name: 'activity', component: ActivityView },
+    { path: '/incidents', name: 'incidents', component: IncidentsView },
   ],
 })
 

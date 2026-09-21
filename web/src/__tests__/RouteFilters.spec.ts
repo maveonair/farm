@@ -45,7 +45,6 @@ describe('route filters', () => {
   it('reads and updates the activity pool in the URL', async () => {
     vi.spyOn(api, 'pools').mockResolvedValue([])
     const getEvents = vi.spyOn(api, 'events').mockResolvedValue([])
-    vi.spyOn(api, 'incidents').mockResolvedValue([])
     const router = routerFor(ActivityView)
     await router.push('/view?pool=ubuntu')
     await router.isReady()

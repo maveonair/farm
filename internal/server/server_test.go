@@ -133,8 +133,35 @@ func TestPoolAPIUsesLiveCounts(t *testing.T) {
 	}
 }
 
+func TestEventsAPIIncludesInstanceName(t *testing.T) {
+	server := New("", &Monitor{}, Options{
+		Store: &fakeReader{events: []store.Event{{
+			ID: 1, InstanceID: "instance-id", InstanceName: "farm-debian-instance", Pool: "debian",
+		}}},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	response := httptest.NewRecorder()
+	server.http.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+	var body struct {
+		Events []struct {
+			InstanceName string `json:"instance_name"`
+		} `json:"events"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Events) != 1 || body.Events[0].InstanceName != "farm-debian-instance" {
+		t.Fatalf("events = %#v", body.Events)
+	}
+}
+
 type fakeReader struct {
-	pools []store.PoolData
+	pools  []store.PoolData
+	events []store.Event
 }
 
 func (r *fakeReader) Get(context.Context, string) (instance.Instance, error) {
@@ -146,7 +173,7 @@ func (r *fakeReader) ListInstances(context.Context, store.InstanceFilter) ([]ins
 }
 
 func (r *fakeReader) ListEvents(context.Context, store.EventFilter) ([]store.Event, error) {
-	return nil, nil
+	return r.events, nil
 }
 
 func (r *fakeReader) ListPoolData(context.Context) ([]store.PoolData, error) {

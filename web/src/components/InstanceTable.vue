@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import type { Instance } from '@/api/client'
-import { relative } from '@/lib/format'
+import { instanceLabel, relative } from '@/lib/format'
 import StateBadge from './StateBadge.vue'
 
 defineProps<{ instances: Instance[] }>()
@@ -25,11 +25,8 @@ defineProps<{ instances: Instance[] }>()
             <RouterLink
               class="font-medium text-violet-700 hover:underline"
               :to="`/instances/${instance.id}`"
-              >{{ instance.name }}</RouterLink
+              >{{ instanceLabel({ id: instance.id, name: instance.name }) }}</RouterLink
             >
-            <div class="mt-1 max-w-72 truncate font-mono text-xs text-slate-400">
-              {{ instance.id }}
-            </div>
           </td>
           <td class="px-4 py-3">
             <RouterLink class="hover:underline" :to="`/pools/${instance.pool}`">{{

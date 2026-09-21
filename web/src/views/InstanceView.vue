@@ -31,7 +31,6 @@ const error = computed(
           <div>
             <p class="eyebrow">Instance</p>
             <h1 class="page-title mt-1">{{ instance.name }}</h1>
-            <p class="mt-2 font-mono text-xs text-slate-500">{{ instance.id }}</p>
           </div>
           <StateBadge :state="instance.state" />
         </div>
