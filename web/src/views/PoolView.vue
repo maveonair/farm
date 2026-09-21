@@ -68,6 +68,18 @@ const error = computed(
               <dd class="mt-1 font-mono text-xs">{{ pool.image }}</dd>
             </div>
             <div>
+              <dt class="text-slate-500">Labels</dt>
+              <dd v-if="pool.labels.length" class="mt-1 flex flex-wrap gap-2">
+                <span
+                  v-for="label in pool.labels"
+                  :key="label"
+                  class="rounded bg-violet-50 px-2 py-1 font-mono text-xs text-violet-700"
+                  >{{ label }}</span
+                >
+              </dd>
+              <dd v-else class="mt-1">None</dd>
+            </div>
+            <div>
               <dt class="text-slate-500">Minimum idle</dt>
               <dd class="mt-1">{{ pool.min_idle }}</dd>
             </div>
