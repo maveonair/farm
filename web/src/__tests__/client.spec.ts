@@ -28,4 +28,23 @@ describe('API client', () => {
 
     await expect(api.summary(new AbortController().signal)).rejects.toBe(canceled)
   })
+
+  it('normalizes paginated collections', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            instances: [{ id: 'instance' }],
+            pagination: { page: 2, per_page: 25, has_next: true },
+          }),
+        ),
+      ),
+    )
+
+    const result = await api.instances(new URLSearchParams({ page: '2' }))
+
+    expect(result.items).toEqual([{ id: 'instance' }])
+    expect(result.pagination).toEqual({ page: 2, per_page: 25, has_next: true })
+  })
 })

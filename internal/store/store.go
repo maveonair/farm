@@ -12,9 +12,10 @@ import (
 )
 
 type InstanceFilter struct {
-	Pool  string
-	State instance.State
-	Limit int
+	Pool   string
+	State  instance.State
+	Limit  int
+	Offset int
 }
 
 type EventKind string
@@ -46,6 +47,7 @@ type EventFilter struct {
 	InstanceID string
 	Pool       string
 	Limit      int
+	Offset     int
 }
 
 type RuntimeState string
@@ -137,9 +139,10 @@ type PoolData struct {
 }
 
 type IncidentFilter struct {
-	Pool  string
-	Open  *bool
-	Limit int
+	Pool   string
+	Open   *bool
+	Limit  int
+	Offset int
 }
 
 type DB struct {

@@ -3,12 +3,14 @@ import type { IncidentStatus } from '@/api/client'
 export interface InstanceFilters {
   pool: string
   state: string
-  limit: number
+  page: number
+  perPage: number
 }
 
 export interface ActivityFilters {
   pool: string
-  limit: number
+  page: number
+  perPage: number
 }
 
 export interface IncidentFilters extends ActivityFilters {

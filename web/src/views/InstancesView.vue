@@ -3,8 +3,10 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { State } from '@/api/client'
 import InstanceTable from '@/components/InstanceTable.vue'
+import PaginationControls from '@/components/PaginationControls.vue'
 import ViewState from '@/components/ViewState.vue'
 import { states } from '@/lib/lifecycle'
+import { pageFrom } from '@/lib/pagination'
 import { useInstancesQuery } from '@/queries/instances'
 import { queryError } from '@/queries/options'
 import { usePoolOptionsQuery } from '@/queries/pools'
@@ -16,8 +18,12 @@ const pool = computed({
   get: () => (typeof route.query.pool === 'string' ? route.query.pool : ''),
   set: (value: string) => {
     const query = { ...route.query }
-    if (value) query.pool = value
-    else delete query.pool
+    delete query.page
+    if (value) {
+      query.pool = value
+    } else {
+      delete query.pool
+    }
 
     void router.replace({ query })
   },
@@ -30,18 +36,24 @@ const state = computed<State | ''>({
   },
   set: (value) => {
     const query = { ...route.query }
-    if (value) query.state = value
-    else delete query.state
+    delete query.page
+    if (value) {
+      query.state = value
+    } else {
+      delete query.state
+    }
 
     void router.replace({ query })
   },
 })
 
 const poolsQuery = usePoolOptionsQuery()
-const instancesQuery = useInstancesQuery(pool, state)
+const page = computed(() => pageFrom(route.query.page))
+const instancesQuery = useInstancesQuery(pool, state, page)
 
 const pools = computed(() => poolsQuery.data.value ?? [])
-const instances = computed(() => instancesQuery.data.value ?? [])
+const instances = computed(() => instancesQuery.data.value?.items ?? [])
+const pagination = computed(() => instancesQuery.data.value?.pagination)
 const loading = instancesQuery.isPending
 const error = computed(() =>
   queryError(instancesQuery.error.value, instancesQuery.data.value, 'Unable to load instances'),
@@ -65,8 +77,9 @@ const error = computed(() =>
       </select>
     </div>
   </div>
-  <ViewState :loading :error :empty="!instances.length"
-    ><template #content><InstanceTable :instances /></template
+  <ViewState :loading :error :empty="!instances.length && page === 1"
+    ><template #content
+      ><InstanceTable :instances /> <PaginationControls v-if="pagination" :pagination /></template
     ><span>No matching instances.</span></ViewState
   >
 </template>

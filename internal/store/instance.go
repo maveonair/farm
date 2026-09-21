@@ -12,8 +12,6 @@ import (
 	"github.com/maveonair/farm/internal/reconcile"
 )
 
-const maxPageSize = 200
-
 func (d *DB) Create(ctx context.Context, record instance.Instance) error {
 	if record.ID == "" || record.Name == "" || record.Pool == "" {
 		return errors.New("instance ID, name, and pool are required")
@@ -64,8 +62,8 @@ func (d *DB) ListPool(ctx context.Context, pool string) ([]instance.Instance, er
 func (d *DB) ListInstances(ctx context.Context, filter InstanceFilter) ([]instance.Instance, error) {
 	rows, err := d.db.QueryContext(ctx, instanceSelect+`
 		WHERE (? = '' OR pool = ?) AND (? = '' OR state = ?)
-		ORDER BY created_at DESC, id DESC LIMIT ?
-	`, filter.Pool, filter.Pool, filter.State, filter.State, pageSize(filter.Limit))
+		ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+	`, filter.Pool, filter.Pool, filter.State, filter.State, listLimit(filter.Limit), listOffset(filter.Offset))
 	if err != nil {
 		return nil, fmt.Errorf("list instances: %w", err)
 	}
@@ -78,8 +76,9 @@ func (d *DB) ListEvents(ctx context.Context, filter EventFilter) ([]Event, error
 		       stage, result, reason, message, created_at
 		FROM instance_events
 		WHERE (? = '' OR instance_id = ?) AND (? = '' OR pool = ?)
-		ORDER BY id DESC LIMIT ?
-	`, filter.InstanceID, filter.InstanceID, filter.Pool, filter.Pool, pageSize(filter.Limit))
+		ORDER BY id DESC LIMIT ? OFFSET ?
+	`, filter.InstanceID, filter.InstanceID, filter.Pool, filter.Pool,
+		listLimit(filter.Limit), listOffset(filter.Offset))
 	if err != nil {
 		return nil, fmt.Errorf("list instance events: %w", err)
 	}
@@ -286,11 +285,4 @@ func nullTimeValue(value time.Time) any {
 		return nil
 	}
 	return value.UTC()
-}
-
-func pageSize(limit int) int {
-	if limit <= 0 || limit > maxPageSize {
-		return 50
-	}
-	return limit
 }

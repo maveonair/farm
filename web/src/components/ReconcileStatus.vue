@@ -12,9 +12,15 @@ const styles = {
 }
 
 function title() {
-  if (props.reconciliation.condition === 'stalled') return 'Reconciliation stalled'
-  if (props.reconciliation.condition === 'degraded') return 'Reconciliation degraded'
-  if (props.reconciliation.condition === 'starting') return 'Initial reconciliation in progress'
+  if (props.reconciliation.condition === 'stalled') {
+    return 'Reconciliation stalled'
+  }
+  if (props.reconciliation.condition === 'degraded') {
+    return 'Reconciliation degraded'
+  }
+  if (props.reconciliation.condition === 'starting') {
+    return 'Initial reconciliation in progress'
+  }
   return 'Reconciliation in progress'
 }
 </script>

@@ -8,8 +8,12 @@ const route = useRoute()
 const summaryQuery = useSummaryQuery()
 const summary = summaryQuery.data
 const statusText = computed(() => {
-  if (!summary.value) return 'Disconnected'
-  if (summaryQuery.isRefetchError.value) return `${summary.value.controller} · stale`
+  if (!summary.value) {
+    return 'Disconnected'
+  }
+  if (summaryQuery.isRefetchError.value) {
+    return `${summary.value.controller} · stale`
+  }
 
   return summary.value.controller
 })
@@ -19,14 +23,20 @@ function isSection(path: string) {
 }
 
 function statusColor() {
-  if (summaryQuery.isRefetchError.value) return 'bg-amber-400'
+  if (summaryQuery.isRefetchError.value) {
+    return 'bg-amber-400'
+  }
 
   const reconciliation = summary.value?.reconciliation
-  if (!reconciliation) return 'bg-slate-400'
-  if (reconciliation.condition === 'degraded' || reconciliation.condition === 'stalled')
+  if (!reconciliation) {
+    return 'bg-slate-400'
+  }
+  if (reconciliation.condition === 'degraded' || reconciliation.condition === 'stalled') {
     return 'bg-red-400'
-  if (reconciliation.phase === 'running' || reconciliation.condition === 'starting')
+  }
+  if (reconciliation.phase === 'running' || reconciliation.condition === 'starting') {
     return 'bg-blue-400'
+  }
   return 'bg-emerald-400'
 }
 </script>

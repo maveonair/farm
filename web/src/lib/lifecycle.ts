@@ -11,7 +11,9 @@ export const stateClasses: Record<State, string> = {
 }
 
 export function lifecycleLabel(value?: string): string {
-  if (!value) return '—'
+  if (!value) {
+    return '—'
+  }
 
   return value.replace(/_/g, ' ')
 }

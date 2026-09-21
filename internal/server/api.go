@@ -16,8 +16,6 @@ import (
 	"github.com/maveonair/farm/internal/store"
 )
 
-const defaultPageSize = 50
-
 type reader interface {
 	Get(context.Context, string) (instance.Instance, error)
 	ListInstances(context.Context, store.InstanceFilter) ([]instance.Instance, error)
@@ -249,23 +247,32 @@ func (s *Server) pool(options Options) http.HandlerFunc {
 
 func (s *Server) instances(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		page, err := parsePage(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		state := instance.State(r.URL.Query().Get("state"))
 		if state != "" && !validState(state) {
 			writeError(w, http.StatusBadRequest, "invalid state")
 			return
 		}
 		instances, err := repository.ListInstances(r.Context(), store.InstanceFilter{
-			Pool: r.URL.Query().Get("pool"), State: state, Limit: pageSize(r),
+			Pool: r.URL.Query().Get("pool"), State: state, Limit: page.limit(), Offset: page.offset,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "read instances")
 			return
 		}
+		instances, pagination := finishPage(instances, page)
 		responses := make([]instanceResponse, 0, len(instances))
 		for _, instance := range instances {
 			responses = append(responses, newInstanceResponse(instance))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"instances": responses})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"instances":  responses,
+			"pagination": pagination,
+		})
 	}
 }
 
@@ -286,20 +293,26 @@ func (s *Server) instance(repository reader) http.HandlerFunc {
 
 func (s *Server) events(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeEvents(w, r, repository, store.EventFilter{Pool: r.URL.Query().Get("pool"), Limit: pageSize(r)})
+		writeEvents(w, r, repository, store.EventFilter{Pool: r.URL.Query().Get("pool")})
 	}
 }
 
 func (s *Server) instanceEvents(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeEvents(w, r, repository, store.EventFilter{InstanceID: r.PathValue("id"), Limit: pageSize(r)})
+		writeEvents(w, r, repository, store.EventFilter{InstanceID: r.PathValue("id")})
 	}
 }
 
 func (s *Server) incidents(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		page, err := parsePage(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		var open *bool
-		switch r.URL.Query().Get("status") {
+		status := r.URL.Query().Get("status")
+		switch status {
 		case "":
 		case "open":
 			value := true
@@ -312,17 +325,21 @@ func (s *Server) incidents(repository reader) http.HandlerFunc {
 			return
 		}
 		incidents, err := repository.ListIncidents(r.Context(), store.IncidentFilter{
-			Pool: r.URL.Query().Get("pool"), Open: open, Limit: pageSize(r),
+			Pool: r.URL.Query().Get("pool"), Open: open, Limit: page.limit(), Offset: page.offset,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "read incidents")
 			return
 		}
+		incidents, pagination := finishPage(incidents, page)
 		responses := make([]incidentResponse, 0, len(incidents))
 		for _, incident := range incidents {
 			responses = append(responses, newIncidentResponse(incident))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"incidents": responses})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"incidents":  responses,
+			"pagination": pagination,
+		})
 	}
 }
 
@@ -347,11 +364,19 @@ func (s *Server) incident(repository reader) http.HandlerFunc {
 }
 
 func writeEvents(w http.ResponseWriter, r *http.Request, repository reader, filter store.EventFilter) {
+	page, err := parsePage(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	filter.Limit = page.limit()
+	filter.Offset = page.offset
 	events, err := repository.ListEvents(r.Context(), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "read events")
 		return
 	}
+	events, pagination := finishPage(events, page)
 	responses := make([]eventResponse, 0, len(events))
 	for _, event := range events {
 		responses = append(responses, eventResponse{
@@ -362,7 +387,10 @@ func writeEvents(w http.ResponseWriter, r *http.Request, repository reader, filt
 			CreatedAt: event.CreatedAt.UTC().Format(time.RFC3339),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": responses})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"events":     responses,
+		"pagination": pagination,
+	})
 }
 
 func newPoolResponse(pool config.Pool, data store.PoolData, staleAfter time.Duration) poolResponse {
@@ -444,18 +472,6 @@ func newInstanceResponse(instance instance.Instance) instanceResponse {
 		UpdatedAt: formatTime(instance.UpdatedAt), StateChangedAt: formatTime(instance.StateChangedAt),
 		StageChangedAt: formatTime(instance.StageChangedAt), FinishedAt: formatTime(instance.FinishedAt),
 	}
-}
-
-func pageSize(r *http.Request) int {
-	value := r.URL.Query().Get("limit")
-	if value == "" {
-		return defaultPageSize
-	}
-	limit, err := strconv.Atoi(value)
-	if err != nil || limit <= 0 || limit > 200 {
-		return defaultPageSize
-	}
-	return limit
 }
 
 func validState(state instance.State) bool {

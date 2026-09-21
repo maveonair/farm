@@ -3,20 +3,24 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import IncidentPanel from '@/components/IncidentPanel.vue'
 import InstanceTable from '@/components/InstanceTable.vue'
+import PaginationControls from '@/components/PaginationControls.vue'
 import ViewState from '@/components/ViewState.vue'
 import { exact, relative, scopeName } from '@/lib/format'
 import { lifecycleLabel } from '@/lib/lifecycle'
+import { pageFrom } from '@/lib/pagination'
 import { useInstancesQuery } from '@/queries/instances'
-import { queryError } from '@/queries/options'
+import { POOL_PAGE_SIZE, queryError } from '@/queries/options'
 import { usePoolQuery } from '@/queries/pools'
 
 const route = useRoute()
 const name = computed(() => String(route.params.name ?? ''))
+const page = computed(() => pageFrom(route.query.page))
 const poolQuery = usePoolQuery(name)
-const instancesQuery = useInstancesQuery(name)
+const instancesQuery = useInstancesQuery(name, '', page, POOL_PAGE_SIZE)
 
 const pool = poolQuery.data
-const instances = computed(() => instancesQuery.data.value ?? [])
+const instances = computed(() => instancesQuery.data.value?.items ?? [])
+const pagination = computed(() => instancesQuery.data.value?.pagination)
 const loading = computed(() => poolQuery.isPending.value || instancesQuery.isPending.value)
 const error = computed(
   () =>
@@ -119,12 +123,13 @@ const error = computed(
         </section>
         <div class="mb-3 mt-8 flex items-center justify-between">
           <h2 class="text-lg font-semibold">Instances</h2>
-          <span class="text-sm text-slate-500">Latest {{ instances.length }}</span>
+          <span class="text-sm text-slate-500">Showing {{ instances.length }}</span>
         </div>
         <InstanceTable v-if="instances.length" :instances />
         <div v-else class="panel p-8 text-center text-sm text-slate-500">
           No instances recorded.
         </div>
+        <PaginationControls v-if="pagination" :pagination />
       </template>
     </template>
   </ViewState>

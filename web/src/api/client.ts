@@ -134,6 +134,17 @@ export interface Event {
   created_at: string
 }
 
+export interface Pagination {
+  page: number
+  per_page: number
+  has_next: boolean
+}
+
+export interface Page<T> {
+  items: T[]
+  pagination: Pagination
+}
+
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, { signal, headers: { Accept: 'application/json' } })
   if (!response.ok) {
@@ -151,15 +162,34 @@ export const api = {
     (await get<{ pools: Pool[] }>('/api/v1/pools', signal)).pools,
   pool: (name: string, signal?: AbortSignal) =>
     get<Pool>(`/api/v1/pools/${encodeURIComponent(name)}`, signal),
-  instances: async (params = new URLSearchParams(), signal?: AbortSignal) =>
-    (await get<{ instances: Instance[] }>(`/api/v1/instances?${params}`, signal)).instances,
+  instances: async (params = new URLSearchParams(), signal?: AbortSignal) => {
+    const response = await get<{ instances: Instance[]; pagination: Pagination }>(
+      `/api/v1/instances?${params}`,
+      signal,
+    )
+    return { items: response.instances, pagination: response.pagination } satisfies Page<Instance>
+  },
   instance: (id: string, signal?: AbortSignal) =>
     get<Instance>(`/api/v1/instances/${encodeURIComponent(id)}`, signal),
-  events: async (params = new URLSearchParams(), signal?: AbortSignal) =>
-    (await get<{ events: Event[] }>(`/api/v1/events?${params}`, signal)).events,
-  instanceEvents: async (id: string, signal?: AbortSignal) =>
-    (await get<{ events: Event[] }>(`/api/v1/instances/${encodeURIComponent(id)}/events`, signal))
-      .events,
-  incidents: async (params = new URLSearchParams(), signal?: AbortSignal) =>
-    (await get<{ incidents: Incident[] }>(`/api/v1/incidents?${params}`, signal)).incidents,
+  events: async (params = new URLSearchParams(), signal?: AbortSignal) => {
+    const response = await get<{ events: Event[]; pagination: Pagination }>(
+      `/api/v1/events?${params}`,
+      signal,
+    )
+    return { items: response.events, pagination: response.pagination } satisfies Page<Event>
+  },
+  instanceEvents: async (id: string, params = new URLSearchParams(), signal?: AbortSignal) => {
+    const response = await get<{ events: Event[]; pagination: Pagination }>(
+      `/api/v1/instances/${encodeURIComponent(id)}/events?${params}`,
+      signal,
+    )
+    return { items: response.events, pagination: response.pagination } satisfies Page<Event>
+  },
+  incidents: async (params = new URLSearchParams(), signal?: AbortSignal) => {
+    const response = await get<{ incidents: Incident[]; pagination: Pagination }>(
+      `/api/v1/incidents?${params}`,
+      signal,
+    )
+    return { items: response.incidents, pagination: response.pagination } satisfies Page<Incident>
+  },
 }

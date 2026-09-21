@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api/client'
 import ActivityView from '@/views/ActivityView.vue'
 import InstancesView from '@/views/InstancesView.vue'
-import { newTestQueryClient } from './query'
+import { newTestQueryClient, page } from './query'
 
 function routerFor(component: object) {
   return createRouter({
@@ -20,9 +20,9 @@ describe('route filters', () => {
 
   it('reads and updates instance filters in the URL', async () => {
     vi.spyOn(api, 'pools').mockResolvedValue([])
-    const getInstances = vi.spyOn(api, 'instances').mockResolvedValue([])
+    const getInstances = vi.spyOn(api, 'instances').mockResolvedValue(page([]))
     const router = routerFor(InstancesView)
-    await router.push('/view?pool=ubuntu&state=running')
+    await router.push('/view?pool=ubuntu&state=running&page=2')
     await router.isReady()
 
     const wrapper = mount(InstancesView, {
@@ -34,6 +34,8 @@ describe('route filters', () => {
 
     expect(getInstances.mock.calls[0]?.[0]?.get('pool')).toBe('ubuntu')
     expect(getInstances.mock.calls[0]?.[0]?.get('state')).toBe('running')
+    expect(getInstances.mock.calls[0]?.[0]?.get('page')).toBe('2')
+    expect(getInstances.mock.calls[0]?.[0]?.get('per_page')).toBe('25')
 
     await wrapper.findAll('select')[1]!.setValue('ready')
     await flushPromises()
@@ -44,9 +46,9 @@ describe('route filters', () => {
 
   it('reads and updates the activity pool in the URL', async () => {
     vi.spyOn(api, 'pools').mockResolvedValue([])
-    const getEvents = vi.spyOn(api, 'events').mockResolvedValue([])
+    const getEvents = vi.spyOn(api, 'events').mockResolvedValue(page([]))
     const router = routerFor(ActivityView)
-    await router.push('/view?pool=ubuntu')
+    await router.push('/view?pool=ubuntu&page=2')
     await router.isReady()
 
     const wrapper = mount(ActivityView, {
@@ -57,6 +59,8 @@ describe('route filters', () => {
     await flushPromises()
 
     expect(getEvents.mock.calls[0]?.[0]?.get('pool')).toBe('ubuntu')
+    expect(getEvents.mock.calls[0]?.[0]?.get('page')).toBe('2')
+    expect(getEvents.mock.calls[0]?.[0]?.get('per_page')).toBe('25')
 
     await wrapper.get('select').setValue('')
     await flushPromises()
