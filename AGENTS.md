@@ -24,6 +24,8 @@
 
 - Strictly preserve layer boundaries. A layer may only communicate with its immediate dependency layer. Do not bypass intermediate abstractions.
 
+- Always use {}, even on a one-line "if" statement.
+
 ## Go
 
 - Write idiomatic, boring Go. Prefer clarity over clever abstractions. Follow standard library conventions.

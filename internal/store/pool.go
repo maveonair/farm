@@ -264,8 +264,8 @@ func (d *DB) ListIncidents(ctx context.Context, filter IncidentFilter) ([]PoolIn
 		FROM pool_incidents
 		WHERE (? = '' OR pool = ?)
 		  AND (? = '' OR (? = 'open' AND resolved_at IS NULL) OR (? = 'resolved' AND resolved_at IS NOT NULL))
-		ORDER BY last_seen_at DESC, id DESC LIMIT ?
-	`, filter.Pool, filter.Pool, status, status, status, pageSize(filter.Limit))
+		ORDER BY last_seen_at DESC, id DESC LIMIT ? OFFSET ?
+	`, filter.Pool, filter.Pool, status, status, status, listLimit(filter.Limit), listOffset(filter.Offset))
 	if err != nil {
 		return nil, fmt.Errorf("list pool incidents: %w", err)
 	}

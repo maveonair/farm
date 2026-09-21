@@ -3,9 +3,9 @@ import { VueQueryPlugin } from '@tanstack/vue-query'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { api, type Pool } from '@/api/client'
+import { api, type Instance, type Pool } from '@/api/client'
 import PoolView from '@/views/PoolView.vue'
-import { newTestQueryClient } from './query'
+import { newTestQueryClient, page } from './query'
 
 const pool: Pool = {
   name: 'ubuntu',
@@ -31,15 +31,33 @@ const pool: Pool = {
   observation_stale: false,
 }
 
+const instance: Instance = {
+  id: 'instance-1',
+  name: 'farm-ubuntu-instance-1',
+  pool: 'ubuntu',
+  state: 'ready',
+  runner_id: 0,
+  error: '',
+  retry_count: 0,
+  created_at: '2026-09-21T10:00:00Z',
+  updated_at: '2026-09-21T10:00:00Z',
+  state_changed_at: '2026-09-21T10:00:00Z',
+}
+
 describe('PoolView', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('shows labels in the configuration panel', async () => {
     vi.spyOn(api, 'pool').mockResolvedValue(pool)
-    vi.spyOn(api, 'instances').mockResolvedValue([])
+    const getInstances = vi
+      .spyOn(api, 'instances')
+      .mockResolvedValue(page([instance], 1, false, 10))
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/pools/:name', component: PoolView }],
+      routes: [
+        { path: '/pools/:name', component: PoolView },
+        { path: '/instances/:id', component: { template: '<div />' } },
+      ],
     })
     await router.push('/pools/ubuntu')
     await router.isReady()
@@ -57,6 +75,8 @@ describe('PoolView', () => {
     expect(configuration?.text()).toContain('Labels')
     expect(configuration?.text()).toContain('ubuntu-24.04')
     expect(configuration?.text()).toContain('x64')
+    expect(getInstances.mock.calls[0]?.[0]?.get('per_page')).toBe('10')
+    expect(wrapper.text()).not.toContain('No instances recorded.')
     wrapper.unmount()
   })
 })

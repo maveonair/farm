@@ -16,7 +16,7 @@ const eventsQuery = useOverviewEventsQuery()
 
 const summary = summaryQuery.data
 const pools = computed(() => poolsQuery.data.value ?? [])
-const events = computed(() => eventsQuery.data.value ?? [])
+const events = computed(() => eventsQuery.data.value?.items ?? [])
 const loading = computed(
   () => summaryQuery.isPending.value || poolsQuery.isPending.value || eventsQuery.isPending.value,
 )

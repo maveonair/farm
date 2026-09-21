@@ -5,9 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { api, type Summary } from '@/api/client'
 import { useInstancesQuery } from '@/queries/instances'
+import { useOverviewEventsQuery } from '@/queries/activity'
 import { POLL_INTERVAL_MS } from '@/queries/options'
 import { useSummaryQuery } from '@/queries/summary'
-import { newTestQueryClient } from './query'
+import { newTestQueryClient, page } from './query'
 
 const summary: Summary = {
   controller: 'farm',
@@ -116,6 +117,22 @@ describe('queries', () => {
     expect(requests[0]?.params).toContain('pool=first')
     expect(requests[0]?.signal?.aborted).toBe(true)
     expect(requests[1]?.params).toContain('pool=second')
+    wrapper.unmount()
+  })
+
+  it('requests eight overview events', async () => {
+    const getEvents = vi.spyOn(api, 'events').mockResolvedValue(page([]))
+    const component = defineComponent({
+      setup() {
+        useOverviewEventsQuery()
+
+        return () => h('div')
+      },
+    })
+    const wrapper = mountQuery(component)
+    await flushPromises()
+
+    expect(getEvents.mock.calls[0]?.[0]?.get('per_page')).toBe('8')
     wrapper.unmount()
   })
 })

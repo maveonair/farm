@@ -13,6 +13,8 @@ import (
 	"github.com/maveonair/farm/internal/reconcile"
 )
 
+const testPageSize = 25
+
 func TestInstanceLifecycle(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
@@ -129,6 +131,66 @@ func TestInstanceEvents(t *testing.T) {
 	}
 	if events[0].Kind != "retry_scheduled" || events[1].ToState != farmInstance.StateReady || events[2].Kind != "created" {
 		t.Fatalf("events = %#v", events)
+	}
+}
+
+func TestEventPagination(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	if err := db.Create(ctx, farmInstance.Instance{ID: "id", Name: "name", Pool: "pool"}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	for range testPageSize + 4 {
+		if err := db.Retry(ctx, "id", "unavailable", time.Now()); err != nil {
+			t.Fatalf("Retry() error = %v", err)
+		}
+	}
+
+	first, err := db.ListEvents(ctx, EventFilter{InstanceID: "id", Limit: testPageSize})
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	if len(first) != testPageSize {
+		t.Fatalf("first page = %d", len(first))
+	}
+
+	second, err := db.ListEvents(ctx, EventFilter{InstanceID: "id", Limit: testPageSize, Offset: testPageSize})
+	if err != nil {
+		t.Fatalf("ListEvents() second page error = %v", err)
+	}
+	if len(second) != 5 || second[0].ID >= first[len(first)-1].ID {
+		t.Fatalf("second page = %#v", second)
+	}
+}
+
+func TestInstancePaginationWithEqualTimes(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	for index := range testPageSize + 5 {
+		id := fmt.Sprintf("instance-%02d", index)
+		if err := db.Create(ctx, farmInstance.Instance{ID: id, Name: id, Pool: "pool"}); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+	}
+	createdAt := time.Date(2026, time.September, 21, 12, 0, 0, 0, time.UTC)
+	if _, err := db.db.ExecContext(ctx, `UPDATE instances SET created_at = ?`, createdAt); err != nil {
+		t.Fatalf("set created_at: %v", err)
+	}
+
+	first, err := db.ListInstances(ctx, InstanceFilter{Pool: "pool", Limit: testPageSize})
+	if err != nil {
+		t.Fatalf("ListInstances() error = %v", err)
+	}
+	if len(first) != testPageSize {
+		t.Fatalf("first page = %d", len(first))
+	}
+
+	second, err := db.ListInstances(ctx, InstanceFilter{Pool: "pool", Limit: testPageSize, Offset: testPageSize})
+	if err != nil {
+		t.Fatalf("ListInstances() second page error = %v", err)
+	}
+	if len(second) != 5 || first[0].ID != "instance-29" || second[0].ID != "instance-04" {
+		t.Fatalf("second page = %#v", second)
 	}
 }
 

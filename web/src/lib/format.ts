@@ -10,7 +10,9 @@ export function instanceLabel(instance: InstanceIdentity): string {
 }
 
 export function relative(value?: string): string {
-  if (!value) return 'Never'
+  if (!value) {
+    return 'Never'
+  }
   const seconds = Math.round((new Date(value).getTime() - Date.now()) / 1000)
   const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
   const ranges: Array<[number, Intl.RelativeTimeFormatUnit]> = [
@@ -20,8 +22,9 @@ export function relative(value?: string): string {
     [1, 'second'],
   ]
   for (const [size, unit] of ranges) {
-    if (Math.abs(seconds) >= size || unit === 'second')
+    if (Math.abs(seconds) >= size || unit === 'second') {
       return formatter.format(Math.round(seconds / size), unit)
+    }
   }
   return 'Now'
 }
@@ -31,7 +34,11 @@ export function exact(value?: string): string {
 }
 
 export function scopeName(scope: { type: string; owner?: string; repository?: string }): string {
-  if (scope.type === 'repository') return `${scope.owner}/${scope.repository}`
-  if (scope.type === 'organization') return scope.owner || scope.type
+  if (scope.type === 'repository') {
+    return `${scope.owner}/${scope.repository}`
+  }
+  if (scope.type === 'organization') {
+    return scope.owner || scope.type
+  }
   return scope.type
 }

@@ -14,7 +14,7 @@ const instanceQuery = useInstanceQuery(id)
 const eventsQuery = useInstanceEventsQuery(id)
 
 const instance = instanceQuery.data
-const events = computed(() => eventsQuery.data.value ?? [])
+const events = computed(() => eventsQuery.data.value?.items ?? [])
 const loading = computed(() => instanceQuery.isPending.value || eventsQuery.isPending.value)
 const error = computed(
   () =>

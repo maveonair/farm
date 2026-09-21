@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import type { Event } from '@/api/client'
+import PaginationControls from '@/components/PaginationControls.vue'
 import ViewState from '@/components/ViewState.vue'
 import { exact, instanceLabel, relative } from '@/lib/format'
 import { lifecycleLabel } from '@/lib/lifecycle'
+import { pageFrom } from '@/lib/pagination'
 import { useEventsQuery } from '@/queries/activity'
 import { queryError } from '@/queries/options'
 import { usePoolOptionsQuery } from '@/queries/pools'
@@ -15,18 +17,24 @@ const selected = computed({
   get: () => (typeof route.query.pool === 'string' ? route.query.pool : ''),
   set: (value: string) => {
     const query = { ...route.query }
-    if (value) query.pool = value
-    else delete query.pool
+    delete query.page
+    if (value) {
+      query.pool = value
+    } else {
+      delete query.pool
+    }
 
     void router.replace({ query })
   },
 })
 
 const poolsQuery = usePoolOptionsQuery()
-const eventsQuery = useEventsQuery(selected)
+const page = computed(() => pageFrom(route.query.page))
+const eventsQuery = useEventsQuery(selected, page)
 
 const pools = computed(() => poolsQuery.data.value ?? [])
-const events = computed(() => eventsQuery.data.value ?? [])
+const events = computed(() => eventsQuery.data.value?.items ?? [])
+const pagination = computed(() => eventsQuery.data.value?.pagination)
 const error = computed(() =>
   queryError(eventsQuery.error.value, eventsQuery.data.value, 'Unable to load activity'),
 )
@@ -58,7 +66,7 @@ function eventSummary(event: Event) {
     </select>
   </div>
 
-  <ViewState :loading="eventsQuery.isPending.value" :error :empty="!events.length">
+  <ViewState :loading="eventsQuery.isPending.value" :error :empty="!events.length && page === 1">
     <template #content>
       <div class="panel divide-y divide-slate-100">
         <div v-for="event in events" :key="event.id" class="px-5 py-4">
@@ -91,6 +99,7 @@ function eventSummary(event: Event) {
           </p>
         </div>
       </div>
+      <PaginationControls v-if="pagination" :pagination />
     </template>
     <span>No lifecycle activity.</span>
   </ViewState>

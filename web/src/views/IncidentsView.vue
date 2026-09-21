@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import type { IncidentStatus } from '@/api/client'
+import PaginationControls from '@/components/PaginationControls.vue'
 import ViewState from '@/components/ViewState.vue'
 import { exact, instanceLabel, relative } from '@/lib/format'
 import { lifecycleLabel } from '@/lib/lifecycle'
+import { pageFrom } from '@/lib/pagination'
 import { useIncidentsQuery } from '@/queries/activity'
 import { queryError } from '@/queries/options'
 import { usePoolOptionsQuery } from '@/queries/pools'
@@ -17,8 +19,12 @@ const pool = computed({
   get: () => (typeof route.query.pool === 'string' ? route.query.pool : ''),
   set: (value: string) => {
     const query = { ...route.query }
-    if (value) query.pool = value
-    else delete query.pool
+    delete query.page
+    if (value) {
+      query.pool = value
+    } else {
+      delete query.pool
+    }
 
     void router.replace({ query })
   },
@@ -33,8 +39,12 @@ const status = computed<IncidentFilter>({
   },
   set: (value) => {
     const query = { ...route.query }
-    if (value === 'open') delete query.status
-    else query.status = value
+    delete query.page
+    if (value === 'open') {
+      delete query.status
+    } else {
+      query.status = value
+    }
 
     void router.replace({ query })
   },
@@ -42,10 +52,12 @@ const status = computed<IncidentFilter>({
 
 const poolsQuery = usePoolOptionsQuery()
 const queryStatus = computed(() => (status.value === 'all' ? '' : status.value))
-const incidentsQuery = useIncidentsQuery(pool, queryStatus)
+const page = computed(() => pageFrom(route.query.page))
+const incidentsQuery = useIncidentsQuery(pool, queryStatus, page)
 
 const pools = computed(() => poolsQuery.data.value ?? [])
-const incidents = computed(() => incidentsQuery.data.value ?? [])
+const incidents = computed(() => incidentsQuery.data.value?.items ?? [])
+const pagination = computed(() => incidentsQuery.data.value?.pagination)
 const error = computed(() =>
   queryError(incidentsQuery.error.value, incidentsQuery.data.value, 'Unable to load incidents'),
 )
@@ -67,7 +79,11 @@ const error = computed(() =>
     </div>
   </div>
 
-  <ViewState :loading="incidentsQuery.isPending.value" :error :empty="!incidents.length">
+  <ViewState
+    :loading="incidentsQuery.isPending.value"
+    :error
+    :empty="!incidents.length && page === 1"
+  >
     <template #content>
       <section class="panel overflow-hidden">
         <div class="divide-y divide-slate-100">
@@ -117,6 +133,7 @@ const error = computed(() =>
           </div>
         </div>
       </section>
+      <PaginationControls v-if="pagination" :pagination />
     </template>
     <span v-if="status === 'open'">No open incidents.</span>
     <span v-else-if="status === 'resolved'">No resolved incidents.</span>

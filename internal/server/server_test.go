@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -159,20 +160,156 @@ func TestEventsAPIIncludesInstanceName(t *testing.T) {
 	}
 }
 
+func TestInstancesAPIFinalPage(t *testing.T) {
+	repository := &fakeReader{instances: make([]instance.Instance, defaultPageSize)}
+	server := New("", &Monitor{}, Options{Store: repository})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/instances", nil)
+	response := httptest.NewRecorder()
+	server.http.Handler.ServeHTTP(response, request)
+	var body struct {
+		Instances  []instanceResponse `json:"instances"`
+		Pagination paginationResponse `json:"pagination"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Instances) != defaultPageSize || body.Pagination.PerPage != defaultPageSize || body.Pagination.HasNext {
+		t.Fatalf("body = %#v", body)
+	}
+}
+
+func TestInstancesAPIRejectsInvalidPagination(t *testing.T) {
+	queries := []string{"page=invalid", "page=0", "page=-1", "per_page=0", "per_page=" + strconv.Itoa(maxPageSize+1)}
+	for _, query := range queries {
+		t.Run(query, func(t *testing.T) {
+			server := New("", &Monitor{}, Options{Store: &fakeReader{}})
+
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/instances?"+query, nil)
+			response := httptest.NewRecorder()
+			server.http.Handler.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d", response.Code)
+			}
+		})
+	}
+}
+
+func TestInstancesAPIPaginates(t *testing.T) {
+	repository := &fakeReader{instances: make([]instance.Instance, defaultPageSize+1)}
+	server := New("", &Monitor{}, Options{Store: repository})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/instances?page=2", nil)
+	response := httptest.NewRecorder()
+	server.http.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+	var body struct {
+		Instances  []instanceResponse `json:"instances"`
+		Pagination paginationResponse `json:"pagination"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Instances) != defaultPageSize || !body.Pagination.HasNext || body.Pagination.Page != 2 {
+		t.Fatalf("body = %#v", body)
+	}
+	if repository.instanceFilter.Offset != defaultPageSize {
+		t.Fatalf("offset = %d", repository.instanceFilter.Offset)
+	}
+}
+
+func TestInstancesAPIUsesRequestedPageSize(t *testing.T) {
+	for _, perPage := range []int{10, maxPageSize} {
+		t.Run(strconv.Itoa(perPage), func(t *testing.T) {
+			repository := &fakeReader{instances: make([]instance.Instance, perPage+1)}
+			server := New("", &Monitor{}, Options{Store: repository})
+
+			path := "/api/v1/instances?page=2&per_page=" + strconv.Itoa(perPage)
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			response := httptest.NewRecorder()
+			server.http.Handler.ServeHTTP(response, request)
+			var body struct {
+				Instances  []instanceResponse `json:"instances"`
+				Pagination struct {
+					Page    int  `json:"page"`
+					PerPage int  `json:"per_page"`
+					HasNext bool `json:"has_next"`
+				} `json:"pagination"`
+			}
+			if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if len(body.Instances) != perPage || body.Pagination.PerPage != perPage || !body.Pagination.HasNext {
+				t.Fatalf("body = %#v", body)
+			}
+			if repository.instanceFilter.Limit != perPage+1 || repository.instanceFilter.Offset != perPage {
+				t.Fatalf("filter = %#v", repository.instanceFilter)
+			}
+		})
+	}
+}
+
+func TestEventsAPIPaginates(t *testing.T) {
+	repository := &fakeReader{events: make([]store.Event, defaultPageSize+1)}
+	server := New("", &Monitor{}, Options{Store: repository})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/events?page=3", nil)
+	response := httptest.NewRecorder()
+	server.http.Handler.ServeHTTP(response, request)
+	var body struct {
+		Events     []eventResponse    `json:"events"`
+		Pagination paginationResponse `json:"pagination"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Events) != defaultPageSize || !body.Pagination.HasNext || repository.eventFilter.Offset != 2*defaultPageSize {
+		t.Fatalf("body = %#v, offset = %d", body, repository.eventFilter.Offset)
+	}
+}
+
+func TestIncidentsAPIPaginates(t *testing.T) {
+	repository := &fakeReader{incidents: make([]store.PoolIncident, defaultPageSize+1)}
+	server := New("", &Monitor{}, Options{Store: repository})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/incidents?page=2", nil)
+	response := httptest.NewRecorder()
+	server.http.Handler.ServeHTTP(response, request)
+	var body struct {
+		Incidents  []incidentResponse `json:"incidents"`
+		Pagination paginationResponse `json:"pagination"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Incidents) != defaultPageSize || !body.Pagination.HasNext || repository.incidentFilter.Offset != defaultPageSize {
+		t.Fatalf("body = %#v, offset = %d", body, repository.incidentFilter.Offset)
+	}
+}
+
 type fakeReader struct {
-	pools  []store.PoolData
-	events []store.Event
+	pools          []store.PoolData
+	events         []store.Event
+	instances      []instance.Instance
+	incidents      []store.PoolIncident
+	instanceFilter store.InstanceFilter
+	eventFilter    store.EventFilter
+	incidentFilter store.IncidentFilter
 }
 
 func (r *fakeReader) Get(context.Context, string) (instance.Instance, error) {
 	return instance.Instance{}, sql.ErrNoRows
 }
 
-func (r *fakeReader) ListInstances(context.Context, store.InstanceFilter) ([]instance.Instance, error) {
-	return nil, nil
+func (r *fakeReader) ListInstances(_ context.Context, filter store.InstanceFilter) ([]instance.Instance, error) {
+	r.instanceFilter = filter
+	return r.instances, nil
 }
 
-func (r *fakeReader) ListEvents(context.Context, store.EventFilter) ([]store.Event, error) {
+func (r *fakeReader) ListEvents(_ context.Context, filter store.EventFilter) ([]store.Event, error) {
+	r.eventFilter = filter
 	return r.events, nil
 }
 
@@ -180,8 +317,9 @@ func (r *fakeReader) ListPoolData(context.Context) ([]store.PoolData, error) {
 	return r.pools, nil
 }
 
-func (r *fakeReader) ListIncidents(context.Context, store.IncidentFilter) ([]store.PoolIncident, error) {
-	return nil, nil
+func (r *fakeReader) ListIncidents(_ context.Context, filter store.IncidentFilter) ([]store.PoolIncident, error) {
+	r.incidentFilter = filter
+	return r.incidents, nil
 }
 
 func (r *fakeReader) GetIncident(context.Context, int64) (store.PoolIncident, error) {

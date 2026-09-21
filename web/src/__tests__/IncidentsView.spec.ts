@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { api, type Incident } from '@/api/client'
 import IncidentsView from '@/views/IncidentsView.vue'
-import { newTestQueryClient } from './query'
+import { newTestQueryClient, page } from './query'
 
 const incidents: Record<string, Incident[]> = {
   open: [
@@ -45,7 +45,7 @@ describe('IncidentsView', () => {
   it('shows open incidents and lets the user inspect resolved incidents', async () => {
     vi.spyOn(api, 'pools').mockResolvedValue([])
     const getIncidents = vi.spyOn(api, 'incidents').mockImplementation(async (params) => {
-      return incidents[params?.get('status') || 'all'] ?? []
+      return page(incidents[params?.get('status') || 'all'] ?? [])
     })
     const router = createRouter({
       history: createMemoryHistory(),
@@ -66,6 +66,7 @@ describe('IncidentsView', () => {
     await flushPromises()
 
     expect(getIncidents.mock.calls[0]?.[0]?.get('status')).toBe('open')
+    expect(getIncidents.mock.calls[0]?.[0]?.get('per_page')).toBe('25')
     expect(wrapper.text()).toContain('Incus is unavailable')
     expect(wrapper.text()).toContain('farm-debian-instance-1234')
 
