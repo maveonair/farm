@@ -60,7 +60,12 @@ type ManagedInstance struct {
 }
 
 type Service struct {
-	client incus.InstanceServer
+	client contextClient
+}
+
+type contextClient interface {
+	incus.InstanceServer
+	WithContext(context.Context) incus.InstanceServer
 }
 
 func Connect(options ConnectOptions) (*Service, error) {
@@ -79,7 +84,7 @@ func Connect(options ConnectOptions) (*Service, error) {
 		if options.Project != "" {
 			client = client.UseProject(options.Project)
 		}
-		return &Service{client: client}, nil
+		return newService(client)
 	}
 	if endpoint.Scheme != "https" {
 		return nil, fmt.Errorf("unsupported Incus endpoint scheme %q", endpoint.Scheme)
@@ -111,7 +116,15 @@ func Connect(options ConnectOptions) (*Service, error) {
 		client = client.UseProject(options.Project)
 	}
 
-	return &Service{client: client}, nil
+	return newService(client)
+}
+
+func newService(client incus.InstanceServer) (*Service, error) {
+	contextual, ok := client.(contextClient)
+	if !ok {
+		return nil, errors.New("incus client does not support request contexts")
+	}
+	return &Service{client: contextual}, nil
 }
 
 func (s *Service) Create(ctx context.Context, spec InstanceSpec) error {
@@ -127,7 +140,8 @@ func (s *Service) Create(ctx context.Context, spec InstanceSpec) error {
 		return err
 	}
 
-	op, err := s.client.CreateInstance(request)
+	client := s.client.WithContext(ctx)
+	op, err := client.CreateInstance(request)
 	if err != nil {
 		return fmt.Errorf("create instance: %w", err)
 	}
@@ -135,7 +149,7 @@ func (s *Service) Create(ctx context.Context, spec InstanceSpec) error {
 		return fmt.Errorf("wait for instance creation: %w", err)
 	}
 
-	instance, _, err := s.client.GetInstance(spec.Name)
+	instance, _, err := client.GetInstance(spec.Name)
 	if err != nil {
 		return fmt.Errorf("verify instance: %w", err)
 	}
@@ -150,7 +164,7 @@ func (s *Service) Managed(ctx context.Context, controller, pool string) ([]Manag
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	instances, err := s.client.GetInstancesFull(api.InstanceTypeAny)
+	instances, err := s.client.WithContext(ctx).GetInstancesFull(api.InstanceTypeAny)
 	if err != nil {
 		return nil, fmt.Errorf("list managed instances: %w", err)
 	}
@@ -181,7 +195,7 @@ func (s *Service) PushRunnerConfig(ctx context.Context, name string, data []byte
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	err := s.client.CreateInstanceFile(name, temporaryPath, incus.InstanceFileArgs{
+	err := s.client.WithContext(ctx).CreateInstanceFile(name, temporaryPath, incus.InstanceFileArgs{
 		Content:   bytes.NewReader(data),
 		UID:       0,
 		GID:       0,
@@ -238,7 +252,8 @@ func (s *Service) WaitAgent(ctx context.Context, name string) error {
 }
 
 func (s *Service) Delete(ctx context.Context, name string) error {
-	instance, _, err := s.client.GetInstance(name)
+	client := s.client.WithContext(ctx)
+	instance, _, err := client.GetInstance(name)
 	if api.StatusErrorCheck(err, http.StatusNotFound) {
 		return nil
 	}
@@ -250,7 +265,7 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 	}
 
 	if instance.IsActive() {
-		op, err := s.client.UpdateInstanceState(name, api.InstanceStatePut{
+		op, err := client.UpdateInstanceState(name, api.InstanceStatePut{
 			Action: "stop",
 			Force:  true,
 		}, "")
@@ -262,7 +277,7 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 		}
 	}
 
-	op, err := s.client.DeleteInstance(name)
+	op, err := client.DeleteInstance(name)
 	if api.StatusErrorCheck(err, http.StatusNotFound) {
 		return nil
 	}
@@ -278,7 +293,7 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 func (s *Service) exec(ctx context.Context, name string, command []string) error {
 	var stderr bytes.Buffer
 	dataDone := make(chan bool)
-	op, err := s.client.ExecInstance(name, api.InstanceExecPost{
+	op, err := s.client.WithContext(ctx).ExecInstance(name, api.InstanceExecPost{
 		Command:   command,
 		WaitForWS: true,
 	}, &incus.InstanceExecArgs{Stderr: &stderr, DataDone: dataDone})

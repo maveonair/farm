@@ -23,14 +23,6 @@ const (
 	ConditionStalled  Condition = "stalled"
 )
 
-type Outcome string
-
-const (
-	OutcomeNone      Outcome = "none"
-	OutcomeSucceeded Outcome = "succeeded"
-	OutcomeFailed    Outcome = "failed"
-)
-
 type Progress struct {
 	Pool       string
 	Stage      string
@@ -41,155 +33,175 @@ type Progress struct {
 type Snapshot struct {
 	Phase          Phase
 	Condition      Condition
-	LastOutcome    Outcome
 	StartedAt      time.Time
 	FinishedAt     time.Time
 	LastSuccessAt  time.Time
 	DeadlineAt     time.Time
 	NextExpectedAt time.Time
-	CompletedPools int
+	ActivePools    int
 	TotalPools     int
 	ActiveFailures int
 	Errors         uint64
 	Progress       []Progress
 }
 
-type Tracker struct {
-	mu             sync.Mutex
-	phase          Phase
-	lastOutcome    Outcome
+type poolState struct {
+	active         bool
+	attempted      bool
+	failed         bool
 	startedAt      time.Time
 	finishedAt     time.Time
 	lastSuccessAt  time.Time
 	deadlineAt     time.Time
 	nextExpectedAt time.Time
-	totalPools     int
-	done           map[string]bool
-	failed         map[string]bool
-	progress       map[string]Progress
-	errors         uint64
-	errorsBy       map[string]uint64
 }
 
-func (t *Tracker) Start(startedAt, deadlineAt time.Time, pools int) {
+type Tracker struct {
+	mu          sync.Mutex
+	interval    time.Duration
+	pools       map[string]poolState
+	progress    map[string]Progress
+	errors      uint64
+	errorsBy    map[string]uint64
+	lastSuccess time.Time
+}
+
+func (t *Tracker) Configure(pools []string, interval time.Duration) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.phase = PhaseRunning
-	t.startedAt = startedAt
-	t.deadlineAt = deadlineAt
-	t.totalPools = pools
-	t.nextExpectedAt = time.Time{}
-	t.done = make(map[string]bool, pools)
-	if t.failed == nil {
-		t.failed = make(map[string]bool)
+
+	t.interval = interval
+	t.pools = make(map[string]poolState, len(pools))
+	for _, pool := range pools {
+		t.pools[pool] = poolState{}
 	}
-	if t.progress == nil {
-		t.progress = make(map[string]Progress)
+	t.progress = make(map[string]Progress, len(pools))
+	if t.errorsBy == nil {
+		t.errorsBy = make(map[string]uint64)
 	}
+}
+
+func (t *Tracker) PoolStart(pool string, startedAt, deadlineAt time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	state := t.pools[pool]
+	state.active = true
+	state.startedAt = startedAt
+	state.deadlineAt = deadlineAt
+	state.nextExpectedAt = time.Time{}
+	t.pools[pool] = state
 }
 
 func (t *Tracker) Progress(value Progress) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
 	if t.progress == nil {
 		t.progress = make(map[string]Progress)
 	}
 	t.progress[value.Pool] = value
 }
 
-func (t *Tracker) PoolFailure(pool, stage, code string) {
+func (t *Tracker) PoolFailure(pool, stage, code string, at time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
 	t.errors++
 	if t.errorsBy == nil {
 		t.errorsBy = make(map[string]uint64)
 	}
-	if t.failed == nil {
-		t.failed = make(map[string]bool)
-	}
 	t.errorsBy[stage+"\x00"+code]++
-	t.failed[pool] = true
-	t.markDone(pool)
-}
 
-func (t *Tracker) PoolSuccess(pool string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.failed, pool)
-	t.markDone(pool)
-}
-
-func (t *Tracker) markDone(pool string) {
-	if t.done == nil {
-		t.done = make(map[string]bool)
-	}
-	t.done[pool] = true
+	state := t.pools[pool]
+	state.active = false
+	state.attempted = true
+	state.failed = true
+	state.finishedAt = at
+	state.deadlineAt = time.Time{}
+	state.nextExpectedAt = at.Add(t.interval)
+	t.pools[pool] = state
 	delete(t.progress, pool)
 }
 
-func (t *Tracker) Finish(at time.Time, interval time.Duration, outcome Outcome) {
+func (t *Tracker) PoolSuccess(pool string, at time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.phase = PhaseIdle
-	t.finishedAt = at
-	grace := max(2*interval, minimumScheduleGrace)
-	t.nextExpectedAt = at.Add(interval + grace)
-	t.lastOutcome = outcome
-	if outcome == OutcomeSucceeded {
-		t.lastSuccessAt = at
+
+	state := t.pools[pool]
+	state.active = false
+	state.attempted = true
+	state.failed = false
+	state.finishedAt = at
+	state.lastSuccessAt = at
+	state.deadlineAt = time.Time{}
+	state.nextExpectedAt = at.Add(t.interval)
+	t.pools[pool] = state
+	delete(t.progress, pool)
+	if t.allSucceeded() {
+		t.lastSuccess = at
 	}
-}
-
-// Success preserves the small monitor API used by callers without cycle details.
-func (t *Tracker) Success(at time.Time) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.lastSuccessAt = at
-	t.lastOutcome = OutcomeSucceeded
-}
-
-func (t *Tracker) Failure() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.errors++
 }
 
 func (t *Tracker) Snapshot(now time.Time) Snapshot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	snapshot := Snapshot{
-		Phase: t.phase, LastOutcome: t.lastOutcome, StartedAt: t.startedAt,
-		FinishedAt: t.finishedAt, LastSuccessAt: t.lastSuccessAt, DeadlineAt: t.deadlineAt,
-		NextExpectedAt: t.nextExpectedAt, CompletedPools: len(t.done), TotalPools: t.totalPools,
-		ActiveFailures: len(t.failed), Errors: t.errors,
-	}
-	if snapshot.Phase == "" {
-		snapshot.Phase = PhaseIdle
-	}
-	if snapshot.LastOutcome == "" {
-		snapshot.LastOutcome = OutcomeNone
+
+	snapshot := Snapshot{TotalPools: len(t.pools), Errors: t.errors, LastSuccessAt: t.lastSuccess}
+	allAttempted := len(t.pools) > 0
+	for _, state := range t.pools {
+		if state.active {
+			snapshot.ActivePools++
+			setEarlier(&snapshot.StartedAt, state.startedAt)
+			setEarlier(&snapshot.DeadlineAt, state.deadlineAt)
+		} else if state.attempted {
+			setEarlier(&snapshot.NextExpectedAt, state.nextExpectedAt)
+		}
+		if state.finishedAt.After(snapshot.FinishedAt) {
+			snapshot.FinishedAt = state.finishedAt
+		}
+		if !state.attempted {
+			allAttempted = false
+		}
+		if state.failed {
+			snapshot.ActiveFailures++
+		}
 	}
 	for _, progress := range t.progress {
 		snapshot.Progress = append(snapshot.Progress, progress)
-		if !progress.DeadlineAt.IsZero() && (snapshot.DeadlineAt.IsZero() || progress.DeadlineAt.Before(snapshot.DeadlineAt)) {
-			snapshot.DeadlineAt = progress.DeadlineAt
-		}
+		setEarlier(&snapshot.DeadlineAt, progress.DeadlineAt)
 	}
-	snapshot.Condition = t.condition(now, snapshot.DeadlineAt)
+
+	if snapshot.ActivePools > 0 {
+		snapshot.Phase = PhaseRunning
+	} else {
+		snapshot.Phase = PhaseIdle
+	}
+	snapshot.Condition = t.condition(now, allAttempted)
 	return snapshot
 }
 
-func (t *Tracker) condition(now, deadline time.Time) Condition {
-	if t.phase == PhaseRunning && !deadline.IsZero() && now.After(deadline) {
-		return ConditionStalled
+func (t *Tracker) condition(now time.Time, allAttempted bool) Condition {
+	grace := max(2*t.interval, minimumScheduleGrace)
+	for _, state := range t.pools {
+		if state.active && !state.deadlineAt.IsZero() && now.After(state.deadlineAt) {
+			return ConditionStalled
+		}
+		if !state.active && state.attempted && !state.nextExpectedAt.IsZero() && now.After(state.nextExpectedAt.Add(grace)) {
+			return ConditionStalled
+		}
 	}
-	if t.phase == PhaseIdle && !t.nextExpectedAt.IsZero() && now.After(t.nextExpectedAt) {
-		return ConditionStalled
+	for _, progress := range t.progress {
+		if !progress.DeadlineAt.IsZero() && now.After(progress.DeadlineAt) {
+			return ConditionStalled
+		}
 	}
-	if len(t.failed) > 0 {
-		return ConditionDegraded
+	for _, state := range t.pools {
+		if state.failed {
+			return ConditionDegraded
+		}
 	}
-	if t.lastSuccessAt.IsZero() {
+	if !allAttempted && len(t.pools) > 0 {
 		return ConditionStarting
 	}
 	return ConditionHealthy
@@ -198,17 +210,41 @@ func (t *Tracker) condition(now, deadline time.Time) Condition {
 func (t *Tracker) MetricData() (int64, uint64, map[string]uint64, []string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
 	errorsBy := make(map[string]uint64, len(t.errorsBy))
 	for key, value := range t.errorsBy {
 		errorsBy[key] = value
 	}
-	failed := make([]string, 0, len(t.failed))
-	for pool := range t.failed {
-		failed = append(failed, pool)
+	failed := make([]string, 0, len(t.pools))
+	for pool, state := range t.pools {
+		if state.failed {
+			failed = append(failed, pool)
+		}
 	}
-	var lastSuccess int64
-	if !t.lastSuccessAt.IsZero() {
-		lastSuccess = t.lastSuccessAt.Unix()
+	var lastSuccessUnix int64
+	if !t.lastSuccess.IsZero() {
+		lastSuccessUnix = t.lastSuccess.Unix()
 	}
-	return lastSuccess, t.errors, errorsBy, failed
+	return lastSuccessUnix, t.errors, errorsBy, failed
+}
+
+func (t *Tracker) allSucceeded() bool {
+	if len(t.pools) == 0 {
+		return false
+	}
+	for _, state := range t.pools {
+		if state.failed || state.lastSuccessAt.IsZero() {
+			return false
+		}
+	}
+	return true
+}
+
+func setEarlier(current *time.Time, candidate time.Time) {
+	if candidate.IsZero() {
+		return
+	}
+	if current.IsZero() || candidate.Before(*current) {
+		*current = candidate
+	}
 }

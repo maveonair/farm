@@ -244,6 +244,87 @@ func TestReconcilePoolCompletesMissingReadyRunner(t *testing.T) {
 	}
 }
 
+func TestReconcilePoolCompletesRunnerWhenItReturnsIdle(t *testing.T) {
+	now := time.Date(2026, time.September, 22, 12, 0, 0, 0, time.UTC)
+	forge := &fakeForge{runnerStatus: forgejo.RunnerIdle}
+	instanceBackend := &fakeInstances{managed: []incus.ManagedInstance{{
+		ID: "instance-id", Name: "farm-ubuntu-instance", Pool: "ubuntu",
+	}}}
+	repository := &fakeRepository{instance: instance.Instance{
+		ID: "instance-id", Name: "farm-ubuntu-instance", Pool: "ubuntu",
+		State: instance.StateRunning, RunnerID: 42, StateChangedAt: now,
+	}}
+	controller := New(forge, instanceBackend, repository, Options{
+		ID: "primary", ForgeURL: "https://git.example.com", Now: func() time.Time { return now },
+	})
+
+	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
+		t.Fatalf("ReconcilePool() error = %v", err)
+	}
+	if repository.instance.State != instance.StateFinished {
+		t.Fatalf("state = %q", repository.instance.State)
+	}
+	if repository.instance.Reason != instance.ReasonJobCompleted {
+		t.Fatalf("reason = %q", repository.instance.Reason)
+	}
+}
+
+func TestReconcilePoolFinishesMissingResources(t *testing.T) {
+	repository := openTestStore(t)
+	seedReadyInstance(t, repository, "instance-id", "farm-ubuntu-instance", "ubuntu", 42)
+	forge := &fakeForge{runnerErr: &forgejo.HTTPError{StatusCode: http.StatusNotFound, Body: "missing"}}
+	controller := New(forge, &fakeInstances{}, repository, Options{
+		ID: "primary", ForgeURL: "https://git.example.com",
+	})
+
+	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
+		t.Fatalf("ReconcilePool() error = %v", err)
+	}
+	record, err := repository.Get(context.Background(), "instance-id")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if record.State != instance.StateFinished || record.Reason != instance.ReasonInstanceMissing {
+		t.Fatalf("instance = %#v", record)
+	}
+	data, err := repository.ListPoolData(context.Background())
+	if err != nil {
+		t.Fatalf("ListPoolData() error = %v", err)
+	}
+	if len(data) != 1 || data[0].Counts.Ready != 0 {
+		t.Fatalf("pool data = %#v", data)
+	}
+}
+
+func TestMissingInstanceStopsCountingAsReadyBeforeCleanupRetry(t *testing.T) {
+	repository := openTestStore(t)
+	seedReadyInstance(t, repository, "instance-id", "farm-ubuntu-instance", "ubuntu", 42)
+	deleteErr := errors.New("Forgejo unavailable")
+	forge := &fakeForge{deleteErr: deleteErr}
+	controller := New(forge, &fakeInstances{}, repository, Options{
+		ID: "primary", ForgeURL: "https://git.example.com",
+	})
+
+	err := controller.ReconcilePool(context.Background(), testPool())
+	if !errors.Is(err, deleteErr) {
+		t.Fatalf("ReconcilePool() error = %v", err)
+	}
+	record, err := repository.Get(context.Background(), "instance-id")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if record.State != instance.StateCleaning {
+		t.Fatalf("state = %q", record.State)
+	}
+	data, err := repository.ListPoolData(context.Background())
+	if err != nil {
+		t.Fatalf("ListPoolData() error = %v", err)
+	}
+	if len(data) != 1 || data[0].Counts.Ready != 0 || data[0].Counts.Cleaning != 1 {
+		t.Fatalf("pool data = %#v", data)
+	}
+}
+
 func TestReconcilePoolRecyclesInterruptedInstance(t *testing.T) {
 	forge := &fakeForge{runnerStatus: forgejo.RunnerOffline}
 	instanceBackend := &fakeInstances{}
@@ -394,19 +475,28 @@ func TestBootstrapFailuresPauseAndProbe(t *testing.T) {
 	if err := controller.ReconcilePool(context.Background(), pool); !errors.Is(err, createErr) {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
+	initial := readPoolData(t, repository, pool.Name)
+	if initial.Runtime.Bootstrap.Attempts != pool.Scaling.BootstrapAttemptLimit {
+		t.Fatalf("bootstrap attempts = %d", initial.Runtime.Bootstrap.Attempts)
+	}
+	if want := now.Add(pool.Scaling.BootstrapRetryInterval.Duration); !initial.Runtime.Bootstrap.RetryAt.Equal(want) {
+		t.Fatalf("bootstrap retry at = %v, want %v", initial.Runtime.Bootstrap.RetryAt, want)
+	}
 	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
 		t.Fatalf("paused ReconcilePool() error = %v", err)
 	}
-	if calls := instanceBackend.createCount(); calls != pool.Scaling.BootstrapAttemptLimit {
-		t.Fatalf("create calls while paused = %d", calls)
+	paused := readPoolData(t, repository, pool.Name)
+	if paused.Runtime.Bootstrap != initial.Runtime.Bootstrap {
+		t.Fatalf("bootstrap state while paused = %#v", paused.Runtime.Bootstrap)
 	}
 
 	now = now.Add(pool.Scaling.BootstrapRetryInterval.Duration)
 	if err := controller.ReconcilePool(context.Background(), pool); !errors.Is(err, createErr) {
 		t.Fatalf("probe ReconcilePool() error = %v", err)
 	}
-	if calls := instanceBackend.createCount(); calls != pool.Scaling.BootstrapAttemptLimit+1 {
-		t.Fatalf("create calls after probe = %d", calls)
+	probe := readPoolData(t, repository, pool.Name)
+	if want := now.Add(pool.Scaling.BootstrapRetryInterval.Duration); !probe.Runtime.Bootstrap.RetryAt.Equal(want) {
+		t.Fatalf("bootstrap retry after probe = %v, want %v", probe.Runtime.Bootstrap.RetryAt, want)
 	}
 
 	now = now.Add(pool.Scaling.BootstrapRetryInterval.Duration)
@@ -414,12 +504,9 @@ func TestBootstrapFailuresPauseAndProbe(t *testing.T) {
 	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
 		t.Fatalf("recovery ReconcilePool() error = %v", err)
 	}
-	data, err := repository.ListPoolData(context.Background())
-	if err != nil {
-		t.Fatalf("ListPoolData() error = %v", err)
-	}
-	if len(data) != 1 || data[0].Runtime.Bootstrap.Attempts != 0 || !data[0].Runtime.Bootstrap.RetryAt.IsZero() {
-		t.Fatalf("pool data after recovery = %#v", data)
+	recovered := readPoolData(t, repository, pool.Name)
+	if recovered.Runtime.Bootstrap.Attempts != 0 || !recovered.Runtime.Bootstrap.RetryAt.IsZero() {
+		t.Fatalf("bootstrap state after recovery = %#v", recovered.Runtime.Bootstrap)
 	}
 }
 
@@ -534,6 +621,49 @@ func newTestController(forge *fakeForge, instanceBackend *fakeInstances, reposit
 	})
 }
 
+func openTestStore(t *testing.T) *store.DB {
+	t.Helper()
+	repository, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "farm.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	return repository
+}
+
+func readPoolData(t *testing.T, repository *store.DB, pool string) store.PoolData {
+	t.Helper()
+	data, err := repository.ListPoolData(context.Background())
+	if err != nil {
+		t.Fatalf("ListPoolData() error = %v", err)
+	}
+	for _, item := range data {
+		if item.Pool == pool {
+			return item
+		}
+	}
+	t.Fatalf("pool %q not found", pool)
+	return store.PoolData{}
+}
+
+func seedReadyInstance(t *testing.T, repository *store.DB, id, name, pool string, runnerID int64) {
+	t.Helper()
+	ctx := context.Background()
+	if err := repository.Create(ctx, instance.Instance{ID: id, Name: name, Pool: pool}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if err := repository.SetRegistration(ctx, id, runnerID); err != nil {
+		t.Fatalf("SetRegistration() error = %v", err)
+	}
+	if err := repository.MarkReady(ctx, id); err != nil {
+		t.Fatalf("MarkReady() error = %v", err)
+	}
+}
+
 func testPool() config.Pool {
 	return config.Pool{
 		Name:   "ubuntu",
@@ -563,6 +693,7 @@ type fakeForge struct {
 	runnerErr    error
 	runnerStatus forgejo.RunnerStatus
 	deleted      bool
+	deleteErr    error
 	deleteCtxErr error
 }
 
@@ -595,7 +726,7 @@ func (f *fakeForge) DeleteRunner(ctx context.Context, _ forgejo.Scope, _ int64) 
 
 	f.deleted = true
 	f.deleteCtxErr = ctx.Err()
-	return nil
+	return f.deleteErr
 }
 
 type fakeInstances struct {
@@ -611,7 +742,6 @@ type fakeInstances struct {
 	waitAgent      int
 	waitAgentErr   error
 	waitCloudInit  int
-	createCalls    int
 }
 
 func (v *fakeInstances) Managed(context.Context, string, string) ([]incus.ManagedInstance, error) {
@@ -620,7 +750,6 @@ func (v *fakeInstances) Managed(context.Context, string, string) ([]incus.Manage
 
 func (v *fakeInstances) Create(_ context.Context, spec incus.InstanceSpec) error {
 	v.mu.Lock()
-	v.createCalls++
 	cancel := v.cancelOnCreate
 	createErr := v.createErr
 	v.mu.Unlock()
@@ -636,13 +765,6 @@ func (v *fakeInstances) Create(_ context.Context, spec incus.InstanceSpec) error
 		ID: spec.ID, Name: spec.Name, Pool: spec.Pool,
 	})
 	return nil
-}
-
-func (v *fakeInstances) createCount() int {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	return v.createCalls
 }
 
 func (v *fakeInstances) WaitCloudInit(context.Context, string) error {

@@ -2,6 +2,7 @@ package incus
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	incus "github.com/lxc/incus/v7/client"
@@ -48,14 +49,46 @@ func TestManagedRejectsContainer(t *testing.T) {
 	}
 }
 
+func TestManagedHonorsCancellation(t *testing.T) {
+	client := &execClient{started: make(chan struct{})}
+	service := &Service{client: client}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := service.Managed(ctx, "primary", "ubuntu")
+		result <- err
+	}()
+
+	<-client.started
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Managed() error = %v", err)
+	}
+}
+
 type execClient struct {
 	incus.InstanceServer
 	op        incus.Operation
 	commands  [][]string
 	instances []api.InstanceFull
+	ctx       context.Context
+	started   chan struct{}
+}
+
+func (c *execClient) WithContext(ctx context.Context) incus.InstanceServer {
+	c.ctx = ctx
+	return c
 }
 
 func (c *execClient) GetInstancesFull(api.InstanceType) ([]api.InstanceFull, error) {
+	if c.started != nil {
+		close(c.started)
+		if c.ctx == nil {
+			return nil, errors.New("missing request context")
+		}
+		<-c.ctx.Done()
+		return nil, c.ctx.Err()
+	}
 	return c.instances, nil
 }
 

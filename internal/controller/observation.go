@@ -95,6 +95,9 @@ func (c *Controller) observe(ctx context.Context, instance farmInstance.Instance
 
 	switch runner.Status {
 	case forgejo.RunnerIdle:
+		if instance.State == farmInstance.StateRunning {
+			return c.cleanup(ctx, instance, scope, farmInstance.ResultSucceeded, farmInstance.ReasonJobCompleted, "")
+		}
 		return c.observeState(ctx, instance, farmInstance.StateReady)
 	case forgejo.RunnerActive:
 		return c.observeState(ctx, instance, farmInstance.StateRunning)

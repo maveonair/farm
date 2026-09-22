@@ -12,7 +12,7 @@ func TestTransition(t *testing.T) {
 		{StateBootstrapping, StateRunning, true},
 		{StateBootstrapping, StateCleaning, true},
 		{StateReady, StateRunning, true},
-		{StateRunning, StateReady, true},
+		{StateRunning, StateReady, false},
 		{StateReady, StateCleaning, true},
 		{StateRunning, StateCleaning, true},
 		{StateCleaning, StateFinished, true},

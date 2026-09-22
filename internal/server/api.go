@@ -140,12 +140,11 @@ type incidentResponse struct {
 type reconciliationResponse struct {
 	Phase          reconcile.Phase     `json:"phase"`
 	Condition      reconcile.Condition `json:"condition"`
-	LastOutcome    reconcile.Outcome   `json:"last_outcome"`
 	StartedAt      string              `json:"started_at,omitempty"`
 	FinishedAt     string              `json:"finished_at,omitempty"`
 	LastSuccessAt  string              `json:"last_success_at,omitempty"`
 	DeadlineAt     string              `json:"deadline_at,omitempty"`
-	CompletedPools int                 `json:"completed_pools"`
+	ActivePools    int                 `json:"active_pools"`
 	TotalPools     int                 `json:"total_pools"`
 	ActiveFailures int                 `json:"active_failures"`
 }
@@ -198,10 +197,10 @@ func (s *Server) summary(options Options) http.HandlerFunc {
 			"last_success_at":  formatTime(snapshot.LastSuccessAt),
 			"reconcile_errors": snapshot.Errors,
 			"reconciliation": reconciliationResponse{
-				Phase: snapshot.Phase, Condition: snapshot.Condition, LastOutcome: snapshot.LastOutcome,
+				Phase: snapshot.Phase, Condition: snapshot.Condition,
 				StartedAt: formatTime(snapshot.StartedAt), FinishedAt: formatTime(snapshot.FinishedAt),
 				LastSuccessAt: formatTime(snapshot.LastSuccessAt), DeadlineAt: formatTime(snapshot.DeadlineAt),
-				CompletedPools: snapshot.CompletedPools, TotalPools: snapshot.TotalPools,
+				ActivePools: snapshot.ActivePools, TotalPools: snapshot.TotalPools,
 				ActiveFailures: snapshot.ActiveFailures,
 			},
 			"waiting":      waiting,

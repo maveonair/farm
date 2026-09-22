@@ -53,7 +53,6 @@ func TestHealth(t *testing.T) {
 		t.Fatalf("status = %d", response.Code)
 	}
 
-	monitor.Success(time.Now())
 	response = httptest.NewRecorder()
 	server.http.Handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -64,7 +63,8 @@ func TestHealth(t *testing.T) {
 func TestHealthAllowsRunningReconciliation(t *testing.T) {
 	monitor := &Monitor{}
 	now := time.Now()
-	monitor.Start(now.Add(-time.Minute), now.Add(time.Minute), 1)
+	monitor.Configure([]string{"ubuntu"}, time.Minute)
+	monitor.PoolStart("ubuntu", now.Add(-time.Minute), now.Add(time.Minute))
 	server := New("", monitor)
 
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -78,8 +78,9 @@ func TestHealthAllowsRunningReconciliation(t *testing.T) {
 func TestHealthRejectsDegradedReconciliation(t *testing.T) {
 	monitor := &Monitor{}
 	now := time.Now()
-	monitor.Start(now, now.Add(time.Minute), 1)
-	monitor.PoolFailure("ubuntu", "fetch_jobs", "unavailable")
+	monitor.Configure([]string{"ubuntu"}, time.Minute)
+	monitor.PoolStart("ubuntu", now, now.Add(time.Minute))
+	monitor.PoolFailure("ubuntu", "fetch_jobs", "unavailable", now)
 	server := New("", monitor)
 
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -92,7 +93,10 @@ func TestHealthRejectsDegradedReconciliation(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	monitor := &Monitor{}
-	monitor.Failure()
+	now := time.Now()
+	monitor.Configure([]string{"ubuntu"}, time.Minute)
+	monitor.PoolStart("ubuntu", now, now.Add(time.Minute))
+	monitor.PoolFailure("ubuntu", "fetch_jobs", "unavailable", now)
 	server := New("", monitor)
 
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -105,7 +109,10 @@ func TestMetrics(t *testing.T) {
 
 func TestSummaryAPI(t *testing.T) {
 	monitor := &Monitor{}
-	monitor.Success(time.Now())
+	now := time.Now()
+	monitor.Configure([]string{"ubuntu"}, time.Minute)
+	monitor.PoolStart("ubuntu", now, now.Add(time.Minute))
+	monitor.PoolSuccess("ubuntu", now)
 	server := New("", monitor, Options{
 		Controller: "primary",
 		Version:    "0.3.0",
@@ -123,16 +130,25 @@ func TestSummaryAPI(t *testing.T) {
 		t.Fatalf("status = %d", response.Code)
 	}
 	var body struct {
-		Controller string         `json:"controller"`
-		Version    string         `json:"version"`
-		Waiting    int            `json:"waiting"`
-		Counts     map[string]int `json:"counts"`
+		Controller     string                     `json:"controller"`
+		Version        string                     `json:"version"`
+		Waiting        int                        `json:"waiting"`
+		Counts         map[string]int             `json:"counts"`
+		Reconciliation map[string]json.RawMessage `json:"reconciliation"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body.Controller != "primary" || body.Version != "0.3.0" || body.Waiting != 2 || body.Counts["running"] != 1 {
 		t.Fatalf("body = %#v", body)
+	}
+	if _, found := body.Reconciliation["active_pools"]; !found {
+		t.Fatal("reconciliation.active_pools is missing")
+	}
+	for _, field := range []string{"completed_pools", "last_outcome"} {
+		if _, found := body.Reconciliation[field]; found {
+			t.Fatalf("reconciliation.%s is present", field)
+		}
 	}
 }
 
