@@ -61,6 +61,76 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultsRunnerInstallation(t *testing.T) {
+	path := writeConfig(t, validConfig)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Pools[0].Instance.RunnerInstall; got != RunnerInstallController {
+		t.Fatalf("runner installation = %q", got)
+	}
+}
+
+func TestLoadAcceptsImageRunner(t *testing.T) {
+	contents := strings.Replace(validConfig, "      image: farm-ubuntu-24.04", "      image: farm-ubuntu-24.04\n      runner_installation: image", 1)
+	contents = strings.Replace(contents, `runner:
+  download_url: https://code.forgejo.org/forgejo/runner/releases/download/v1/runner
+  sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`, "", 1)
+
+	cfg, err := Load(writeConfig(t, contents))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Pools[0].Instance.RunnerInstall; got != RunnerInstallImage {
+		t.Fatalf("runner installation = %q", got)
+	}
+}
+
+func TestLoadRejectsUnknownRunnerInstallation(t *testing.T) {
+	contents := strings.Replace(validConfig, "      image: farm-ubuntu-24.04", "      image: farm-ubuntu-24.04\n      runner_installation: external", 1)
+
+	_, err := Load(writeConfig(t, contents))
+	if err == nil || !strings.Contains(err.Error(), "runner_installation") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestLoadRequiresRunnerForMixedInstallation(t *testing.T) {
+	contents := strings.Replace(validConfig, `runner:
+  download_url: https://code.forgejo.org/forgejo/runner/releases/download/v1/runner
+  sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`, "", 1)
+	contents = strings.Replace(contents, "pools:\n", `pools:
+  - name: image
+    scope:
+      type: user
+    labels: [farm-image]
+    instance:
+      image: farm-image
+      runner_installation: image
+    scaling:
+      max_instances: 1
+`, 1)
+
+	_, err := Load(writeConfig(t, contents))
+	if err == nil || !strings.Contains(err.Error(), "runner.download_url") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestLoadValidatesUnusedRunner(t *testing.T) {
+	contents := strings.Replace(validConfig, "      image: farm-ubuntu-24.04", "      image: farm-ubuntu-24.04\n      runner_installation: image", 1)
+	contents = strings.Replace(contents, "https://code.forgejo.org/forgejo/runner/releases/download/v1/runner", "invalid", 1)
+
+	_, err := Load(writeConfig(t, contents))
+	if err == nil || !strings.Contains(err.Error(), "runner.download_url") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
 func TestLoadAppliesDefaults(t *testing.T) {
 	contents := validConfig
 	for _, line := range []string{

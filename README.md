@@ -26,7 +26,7 @@ You need:
 
 - Forgejo 15 LTS or newer and an Actions administration token
 - Incus with a dedicated project, VM profile, and managed network
-- A VM image with cloud-init and the Incus agent
+- A VM image with the Incus agent and either cloud-init or a prepared runner
 - Go 1.27.1 or newer
 - Node.js `^22.18.0` or `>=24.12.0`, and pnpm 12.4.2
 
@@ -44,7 +44,7 @@ For a local test, change `controller.database` and `forgejo.token_file` in
 configure:
 
 - the Forgejo URL and token
-- the runner download URL and SHA-256 digest
+- the runner download URL and SHA-256 digest for controller-installed runners
 - the Incus endpoint and project
 - the pool scope, label, image, and profile
 

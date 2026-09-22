@@ -201,17 +201,28 @@ func (s *Service) PushRunnerConfig(ctx context.Context, name string, data []byte
 	if err := s.exec(ctx, name, []string{"rm", "-f", temporaryPath}); err != nil {
 		return fmt.Errorf("remove temporary runner config: %w", err)
 	}
-	if err := s.exec(ctx, name, []string{"systemctl", "start", "forgejo-runner.service"}); err != nil {
-		return fmt.Errorf("start runner: %w", err)
+	if err := s.exec(ctx, name, []string{"systemctl", "restart", "forgejo-runner.service"}); err != nil {
+		return fmt.Errorf("restart runner: %w", err)
 	}
 
 	return nil
 }
 
 func (s *Service) WaitCloudInit(ctx context.Context, name string) error {
+	if err := s.WaitAgent(ctx, name); err != nil {
+		return err
+	}
+
+	if err := s.exec(ctx, name, []string{"cloud-init", "status", "--wait"}); err != nil {
+		return fmt.Errorf("wait for cloud-init: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) WaitAgent(ctx context.Context, name string) error {
 	for {
 		if err := s.exec(ctx, name, []string{"true"}); err == nil {
-			break
+			return nil
 		}
 
 		timer := time.NewTimer(agentRetry)
@@ -222,11 +233,6 @@ func (s *Service) WaitCloudInit(ctx context.Context, name string) error {
 		case <-timer.C:
 		}
 	}
-
-	if err := s.exec(ctx, name, []string{"cloud-init", "status", "--wait"}); err != nil {
-		return fmt.Errorf("wait for cloud-init: %w", err)
-	}
-	return nil
 }
 
 func (s *Service) Delete(ctx context.Context, name string) error {
@@ -322,7 +328,9 @@ func createRequest(spec InstanceSpec) (api.InstancesPost, error) {
 	for key, value := range spec.Config {
 		config[key] = value
 	}
-	config[cloudInitKey] = string(spec.CloudInit)
+	if len(spec.CloudInit) != 0 {
+		config[cloudInitKey] = string(spec.CloudInit)
+	}
 	config[managedKey] = "true"
 	config[instanceKey] = spec.ID
 	config[poolKey] = spec.Pool

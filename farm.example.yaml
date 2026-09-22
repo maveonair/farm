@@ -26,6 +26,8 @@ pools:
       - farm-ubuntu
     instance:
       image: farm-ubuntu-24.04
+      # Use "image" when the image provides the runner service.
+      runner_installation: controller
       profiles:
         - farm-vm
       config:

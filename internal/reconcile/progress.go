@@ -10,6 +10,7 @@ const (
 	StageScaleDown        Stage = "scale_down"
 	StageRegisterRunner   Stage = "register_runner"
 	StateCreateInstance   Stage = "create_instance"
+	StageWaitAgent        Stage = "wait_agent"
 	StageWaitCloudInit    Stage = "wait_cloud_init"
 	StagePushRunnerConfig Stage = "push_runner_config"
 	StageWaitRunner       Stage = "wait_runner"

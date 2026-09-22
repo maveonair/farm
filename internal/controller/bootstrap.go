@@ -60,10 +60,13 @@ func (c *Controller) provision(ctx context.Context, pool config.Pool, scope forg
 		"runner_id", registration.ID,
 	)
 
-	cloudInit, err := bootstrap.CloudInit(c.install)
-	if err != nil {
-		return c.fail(ctx, instance, scope, registration, false,
-			operationError(reconcile.StagePushRunnerConfig, reconcile.FailureUnknown, instance, err))
+	var cloudInit []byte
+	if pool.Instance.RunnerInstall != config.RunnerInstallImage {
+		cloudInit, err = bootstrap.CloudInit(c.install)
+		if err != nil {
+			return c.fail(ctx, instance, scope, registration, false,
+				operationError(reconcile.StagePushRunnerConfig, reconcile.FailureUnknown, instance, err))
+		}
 	}
 	instanceCreated := false
 	if err := c.setProgress(workCtx, pool.Name, runID, reconcile.StateCreateInstance, deadline); err != nil {
@@ -100,15 +103,19 @@ func (c *Controller) provision(ctx context.Context, pool config.Pool, scope forg
 		"instance_id", id,
 		"instance_name", name,
 	)
-	if err := c.setProgress(workCtx, pool.Name, runID, reconcile.StageWaitCloudInit, deadline); err != nil {
+	waitStage := reconcile.StageWaitCloudInit
+	if pool.Instance.RunnerInstall == config.RunnerInstallImage {
+		waitStage = reconcile.StageWaitAgent
+	}
+	if err := c.setProgress(workCtx, pool.Name, runID, waitStage, deadline); err != nil {
 		return c.fail(ctx, instance, scope, registration, instanceCreated, err)
 	}
-	if err := c.setInstanceStage(workCtx, instance, reconcile.StageWaitCloudInit); err != nil {
+	if err := c.setInstanceStage(workCtx, instance, waitStage); err != nil {
 		return c.fail(ctx, instance, scope, registration, instanceCreated, err)
 	}
-	if err := c.instances.WaitCloudInit(workCtx, name); err != nil {
+	if err := c.waitInstance(workCtx, pool.Instance.RunnerInstall, name); err != nil {
 		return c.fail(ctx, instance, scope, registration, instanceCreated,
-			operationError(reconcile.StageWaitCloudInit, classify(err), instance, err))
+			operationError(waitStage, classify(err), instance, err))
 	}
 
 	runnerConfig, err := bootstrap.RunnerConfig(bootstrap.Connection{
@@ -161,6 +168,14 @@ func (c *Controller) provision(ctx context.Context, pool config.Pool, scope forg
 		"state", state,
 	)
 	return nil
+}
+
+func (c *Controller) waitInstance(ctx context.Context, install config.RunnerInstallMode, name string) error {
+	if install == config.RunnerInstallImage {
+		return c.instances.WaitAgent(ctx, name)
+	}
+
+	return c.instances.WaitCloudInit(ctx, name)
 }
 
 func runnerDescription(controller, pool string) string {

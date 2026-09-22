@@ -30,7 +30,7 @@ incus profile device add farm-vm eth0 nic network=farmbr0 name=eth0 \
 The profile must not expose host filesystems, the Incus socket, or host
 devices.
 
-The VM image must:
+For controller installation, the VM image must:
 
 - support Incus virtual machines
 - run systemd and cloud-init
@@ -38,6 +38,8 @@ The VM image must:
 - reach Forgejo and the runner download URL over HTTPS
 
 FARM installs `ca-certificates`, `curl`, `git`, and `nodejs` through cloud-init.
+Prepared images can instead use `runner_installation: image`; see
+[Image-provided runner](#image-provided-runner).
 
 Copy a VM image into the project:
 
@@ -97,6 +99,78 @@ rm forgejo-runner
 ```
 
 Set the digest in `runner.sha256`. FARM verifies it inside every new VM.
+
+Skip these fields when every pool uses an image-provided runner.
+
+### Image-provided runner
+
+Set `runner_installation: image` on a pool whose image already provides the
+runner:
+
+```yaml
+instance:
+  image: farm-nixos
+  runner_installation: image
+```
+
+FARM does not inject cloud-init for this mode. It waits for the Incus agent,
+writes `/etc/farm/runner.yml`, and restarts `forgejo-runner.service`.
+
+A NixOS image can define the required service as follows:
+
+```nix
+{pkgs, ...}:
+{
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
+  environment.systemPackages = with pkgs; [
+    forgejo-runner
+  ];
+
+  users.groups.runner = {};
+
+  users.users.runner = {
+    isSystemUser = true;
+    group = "runner";
+    home = "/var/lib/forgejo-runner";
+    createHome = true;
+  };
+
+  systemd.tmpfiles.rules = [
+    "d /etc/farm 0700 runner runner -"
+  ];
+
+  systemd.services.forgejo-runner = {
+    description = "Forgejo Actions Runner";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+
+    unitConfig.ConditionPathExists = "/etc/farm/runner.yml";
+
+    serviceConfig = {
+      Type = "simple";
+      User = "runner";
+      Group = "runner";
+      WorkingDirectory = "/var/lib/forgejo-runner";
+      ExecStart = "${pkgs.forgejo-runner}/bin/forgejo-runner -c /etc/farm/runner.yml one-job --wait";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+
+    path = with pkgs; [
+      bash
+      coreutils
+      git
+      nix
+    ];
+
+    environment.NIX_PATH = "nixpkgs=${pkgs.path}";
+  };
+}
+```
+
+Do not add `wantedBy` or bake `runner.yml` into the image. FARM supplies the
+ephemeral credentials before starting the service.
 
 ## 5. Configure FARM
 
@@ -234,13 +308,17 @@ restriction.
 
 ### VM startup times out
 
-Confirm the image has cloud-init, systemd, and a working Incus agent. Check VM
-network, DNS, Forgejo access, and runner download access.
+Confirm the image has systemd and a working Incus agent. Controller-installed
+runners also require cloud-init. Check VM network, DNS, Forgejo access, and,
+when applicable, runner download access.
 
 ### Runner installation fails
 
 Confirm that `runner.download_url` matches the VM architecture and that
 `runner.sha256` is the digest of that exact file.
+
+For image-installed runners, confirm the image contract above and inspect
+`forgejo-runner.service` inside the VM.
 
 ### Health returns 503
 
