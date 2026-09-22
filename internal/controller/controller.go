@@ -15,7 +15,7 @@ import (
 	"github.com/maveonair/farm/internal/bootstrap"
 	"github.com/maveonair/farm/internal/config"
 	"github.com/maveonair/farm/internal/forgejo"
-	incusvm "github.com/maveonair/farm/internal/incus"
+	"github.com/maveonair/farm/internal/incus"
 	farmInstance "github.com/maveonair/farm/internal/instance"
 	"github.com/maveonair/farm/internal/reconcile"
 	"github.com/maveonair/farm/internal/scheduler"
@@ -23,10 +23,11 @@ import (
 )
 
 const (
-	idBytes          = 16
-	runnerPollPeriod = 2 * time.Second
-	retryBase        = 5 * time.Second
-	retryMax         = 5 * time.Minute
+	idBytes               = 16
+	runnerPollPeriod      = 2 * time.Second
+	retryBase             = 5 * time.Second
+	retryMax              = 5 * time.Minute
+	defaultCleanupTimeout = 2 * time.Minute
 )
 
 type forge interface {
@@ -38,8 +39,8 @@ type forge interface {
 }
 
 type instances interface {
-	Create(context.Context, incusvm.InstanceSpec) error
-	Managed(context.Context, string, string) ([]incusvm.ManagedInstance, error)
+	Create(context.Context, incus.InstanceSpec) error
+	Managed(context.Context, string, string) ([]incus.ManagedInstance, error)
 	WaitAgent(context.Context, string) error
 	WaitCloudInit(context.Context, string) error
 	PushRunnerConfig(context.Context, string, []byte) error
@@ -169,7 +170,7 @@ func classify(err error) reconcile.FailureCode {
 	}
 }
 
-func New(forge forge, vms instances, repository repository, options Options) *Controller {
+func New(forge forge, instanceBackend instances, repository repository, options Options) *Controller {
 	now := options.Now
 	if now == nil {
 		now = time.Now
@@ -178,15 +179,19 @@ func New(forge forge, vms instances, repository repository, options Options) *Co
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+	cleanupTimeout := options.CleanupTimeout
+	if cleanupTimeout <= 0 {
+		cleanupTimeout = defaultCleanupTimeout
+	}
 	return &Controller{
 		forge:          forge,
-		instances:      vms,
+		instances:      instanceBackend,
 		store:          repository,
 		url:            options.ForgeURL,
 		install:        options.Install,
 		id:             options.ID,
 		now:            now,
-		cleanupTimeout: options.CleanupTimeout,
+		cleanupTimeout: cleanupTimeout,
 		requestTimeout: options.RequestTimeout,
 		progress:       options.Progress,
 		logger:         logger.With("controller", options.ID),
@@ -212,7 +217,9 @@ func (c *Controller) ReconcilePool(ctx context.Context, pool config.Pool) (recon
 			result.State = store.RuntimeFailed
 			result.Failure = failureFrom(reconcileErr)
 		}
-		if err := c.store.FinishPool(context.WithoutCancel(ctx), result); err != nil {
+		finishCtx, cancel := c.cleanupContext(context.WithoutCancel(ctx))
+		defer cancel()
+		if err := c.store.FinishPool(finishCtx, result); err != nil {
 			reconcileErr = errors.Join(reconcileErr,
 				operationError(reconcile.StagePersistState, reconcile.FailureDatabase, farmInstance.Instance{}, err))
 		}

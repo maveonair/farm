@@ -33,7 +33,7 @@ func TestFailureRemainsDuringRetry(t *testing.T) {
 	tracker := &Tracker{}
 	tracker.Start(now, now.Add(time.Minute), 1)
 	tracker.PoolFailure("ubuntu", "fetch_jobs", "unavailable")
-	tracker.Finish(now, time.Second, false)
+	tracker.Finish(now, time.Second, OutcomeFailed)
 	tracker.Start(now.Add(time.Second), now.Add(time.Minute), 1)
 
 	if condition := tracker.Snapshot(now.Add(2 * time.Second)).Condition; condition != ConditionDegraded {

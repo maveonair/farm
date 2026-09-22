@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -56,7 +57,6 @@ type ManagedInstance struct {
 	ID   string
 	Name string
 	Pool string
-	Type string
 }
 
 type Service struct {
@@ -129,15 +129,15 @@ func (s *Service) Create(ctx context.Context, spec InstanceSpec) error {
 
 	op, err := s.client.CreateInstance(request)
 	if err != nil {
-		return fmt.Errorf("create VM: %w", err)
+		return fmt.Errorf("create instance: %w", err)
 	}
 	if err := op.WaitContext(ctx); err != nil {
-		return fmt.Errorf("wait for VM creation: %w", err)
+		return fmt.Errorf("wait for instance creation: %w", err)
 	}
 
 	instance, _, err := s.client.GetInstance(spec.Name)
 	if err != nil {
-		return fmt.Errorf("verify VM: %w", err)
+		return fmt.Errorf("verify instance: %w", err)
 	}
 	if instance.Type != string(api.InstanceTypeVM) {
 		return fmt.Errorf("security violation: Incus created instance type %q", instance.Type)
@@ -163,11 +163,13 @@ func (s *Service) Managed(ctx context.Context, controller, pool string) ([]Manag
 		if pool != "" && instance.Config[poolKey] != pool {
 			continue
 		}
+		if instance.Type != string(api.InstanceTypeVM) {
+			return nil, fmt.Errorf("security violation: managed instance %q has type %q", instance.Name, instance.Type)
+		}
 		managed = append(managed, ManagedInstance{
 			ID:   instance.Config[instanceKey],
 			Name: instance.Name,
 			Pool: instance.Config[poolKey],
-			Type: instance.Type,
 		})
 	}
 	return managed, nil
@@ -241,7 +243,7 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("get VM before deletion: %w", err)
+		return fmt.Errorf("get instance before deletion: %w", err)
 	}
 	if instance.Type != string(api.InstanceTypeVM) {
 		return fmt.Errorf("security violation: refusing to delete instance type %q", instance.Type)
@@ -253,10 +255,10 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 			Force:  true,
 		}, "")
 		if err != nil {
-			return fmt.Errorf("stop VM: %w", err)
+			return fmt.Errorf("stop instance: %w", err)
 		}
 		if err := op.WaitContext(ctx); err != nil {
-			return fmt.Errorf("wait for VM stop: %w", err)
+			return fmt.Errorf("wait for instance stop: %w", err)
 		}
 	}
 
@@ -265,10 +267,10 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("delete VM: %w", err)
+		return fmt.Errorf("delete instance: %w", err)
 	}
 	if err := op.WaitContext(ctx); err != nil {
-		return fmt.Errorf("wait for VM deletion: %w", err)
+		return fmt.Errorf("wait for instance deletion: %w", err)
 	}
 	return nil
 }
@@ -309,10 +311,10 @@ func (s *Service) exec(ctx context.Context, name string, command []string) error
 
 func createRequest(spec InstanceSpec) (api.InstancesPost, error) {
 	if spec.ID == "" {
-		return api.InstancesPost{}, errors.New("missing VM ID")
+		return api.InstancesPost{}, errors.New("missing instance ID")
 	}
 	if spec.Name == "" {
-		return api.InstancesPost{}, errors.New("missing VM name")
+		return api.InstancesPost{}, errors.New("missing instance name")
 	}
 	if spec.Pool == "" {
 		return api.InstancesPost{}, errors.New("pool is required")
@@ -325,9 +327,8 @@ func createRequest(spec InstanceSpec) (api.InstancesPost, error) {
 	}
 
 	config := make(map[string]string, len(spec.Config)+4)
-	for key, value := range spec.Config {
-		config[key] = value
-	}
+	maps.Copy(config, spec.Config)
+
 	if len(spec.CloudInit) != 0 {
 		config[cloudInitKey] = string(spec.CloudInit)
 	}
@@ -337,13 +338,11 @@ func createRequest(spec InstanceSpec) (api.InstancesPost, error) {
 	config[controllerKey] = spec.Controller
 
 	return api.InstancesPost{
-		Name:  spec.Name,
-		Type:  api.InstanceTypeVM,
-		Start: true,
-		InstancePut: api.InstancePut{
-			Config:   config,
-			Profiles: append([]string(nil), spec.Profiles...),
-		},
+		Name:     spec.Name,
+		Type:     api.InstanceTypeVM,
+		Start:    true,
+		Config:   config,
+		Profiles: append([]string(nil), spec.Profiles...),
 		Source: api.InstanceSource{
 			Type:        "image",
 			Alias:       spec.Image.Alias,

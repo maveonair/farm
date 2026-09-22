@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -16,7 +15,7 @@ import (
 	"github.com/maveonair/farm/internal/config"
 	"github.com/maveonair/farm/internal/controller"
 	"github.com/maveonair/farm/internal/forgejo"
-	incusvm "github.com/maveonair/farm/internal/incus"
+	"github.com/maveonair/farm/internal/incus"
 	"github.com/maveonair/farm/internal/reconcile"
 	"github.com/maveonair/farm/internal/server"
 	"github.com/maveonair/farm/internal/store"
@@ -38,7 +37,6 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 	}
 	logger = logger.With("service", "farm")
 	appLogger := logger.With("controller", cfg.Controller.ID)
-	slog.SetDefault(appLogger)
 
 	token, err := readToken(cfg.Forgejo.TokenFile)
 	if err != nil {
@@ -52,7 +50,7 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 	if err != nil {
 		return err
 	}
-	vms, err := incusvm.Connect(incusvm.ConnectOptions{
+	instanceBackend, err := incus.Connect(incus.ConnectOptions{
 		Endpoint:       cfg.Incus.Endpoint,
 		Project:        cfg.Incus.Project,
 		ClientCertFile: cfg.Incus.ClientCertFile,
@@ -74,7 +72,7 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 	}
 
 	monitor := &server.Monitor{}
-	manager := controller.New(forge, vms, repository, controller.Options{
+	manager := controller.New(forge, instanceBackend, repository, controller.Options{
 		ID:       cfg.Controller.ID,
 		ForgeURL: cfg.Forgejo.URL,
 		Install: bootstrap.Install{
@@ -100,6 +98,7 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 			ReconcileInterval: cfg.Controller.ReconcileInterval.Duration,
 			Pools:             cfg.Pools,
 			Store:             repository,
+			Logger:            appLogger,
 		},
 	)
 	serverErr := make(chan error, 1)
@@ -112,10 +111,10 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 		"pools", len(cfg.Pools),
 	)
 
-	reconcile := func() {
+	runReconcile := func() {
 		started := time.Now()
 		monitor.Start(started, started.Add(maxOperationTimeout(cfg)), len(cfg.Pools))
-		succeeded := true
+		outcome := reconcile.OutcomeSucceeded
 		type result struct {
 			pool     string
 			duration time.Duration
@@ -148,7 +147,7 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 					"error", result.err,
 				)
 				monitor.PoolFailure(result.pool, string(failure.Stage), string(failure.Code))
-				succeeded = false
+				outcome = reconcile.OutcomeFailed
 				continue
 			}
 			monitor.PoolSuccess(result.pool)
@@ -158,14 +157,14 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 				"duration", result.duration,
 			)
 		}
-		monitor.Finish(time.Now(), cfg.Controller.ReconcileInterval.Duration, succeeded)
+		monitor.Finish(time.Now(), cfg.Controller.ReconcileInterval.Duration, outcome)
 		appLogger.DebugContext(ctx, "reconciliation cycle completed",
 			"event", "reconcile_cycle_completed",
 			"duration", time.Since(started),
-			"success", succeeded,
+			"success", outcome == reconcile.OutcomeSucceeded,
 		)
 	}
-	reconcile()
+	runReconcile()
 
 	timer := time.NewTimer(cfg.Controller.ReconcileInterval.Duration)
 	defer timer.Stop()
@@ -187,7 +186,7 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 		case err := <-serverErr:
 			return err
 		case <-timer.C:
-			reconcile()
+			runReconcile()
 			timer.Reset(cfg.Controller.ReconcileInterval.Duration)
 		}
 	}

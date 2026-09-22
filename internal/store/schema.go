@@ -55,7 +55,7 @@ func (d *DB) migrateV1(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("begin database migration: %w", err)
 	}
-	defer tx.Rollback()
+	defer rollback(tx)
 
 	for _, statement := range []string{
 		`ALTER TABLE pool_runtime ADD COLUMN bootstrap_attempts INTEGER NOT NULL DEFAULT 0 CHECK (bootstrap_attempts >= 0)`,

@@ -13,19 +13,19 @@ import (
 	"github.com/maveonair/farm/internal/bootstrap"
 	"github.com/maveonair/farm/internal/config"
 	"github.com/maveonair/farm/internal/forgejo"
-	incusvm "github.com/maveonair/farm/internal/incus"
+	"github.com/maveonair/farm/internal/incus"
 	"github.com/maveonair/farm/internal/instance"
 	"github.com/maveonair/farm/internal/reconcile"
 	"github.com/maveonair/farm/internal/store"
 )
 
-func TestReconcilePoolProvisionsVM(t *testing.T) {
+func TestReconcilePoolProvisionsInstance(t *testing.T) {
 	forge := &fakeForge{
 		jobs: []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
 	}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{}
-	controller := New(forge, vms, repository, Options{
+	controller := New(forge, instanceBackend, repository, Options{
 		ID:       "primary",
 		ForgeURL: "https://git.example.com",
 		Install: bootstrap.Install{
@@ -37,13 +37,13 @@ func TestReconcilePoolProvisionsVM(t *testing.T) {
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if vms.created.Name == "" {
-		t.Fatal("VM was not created")
+	if instanceBackend.created.Name == "" {
+		t.Fatal("instance was not created")
 	}
-	if bytes.Contains(vms.created.CloudInit, []byte("runner-token")) {
+	if bytes.Contains(instanceBackend.created.CloudInit, []byte("runner-token")) {
 		t.Fatal("cloud-init contains runner token")
 	}
-	if !bytes.Contains(vms.runnerConfig, []byte("runner-token")) {
+	if !bytes.Contains(instanceBackend.runnerConfig, []byte("runner-token")) {
 		t.Fatal("runner config does not contain token")
 	}
 	if repository.instance.State != instance.StateReady {
@@ -55,22 +55,22 @@ func TestReconcilePoolUsesImageRunner(t *testing.T) {
 	forge := &fakeForge{
 		jobs: []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
 	}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 	pool := testPool()
 	pool.Instance.RunnerInstall = config.RunnerInstallImage
 
 	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if len(vms.created.CloudInit) != 0 {
+	if len(instanceBackend.created.CloudInit) != 0 {
 		t.Fatal("image runner received cloud-init")
 	}
-	if vms.waitAgent != 1 || vms.waitCloudInit != 0 {
-		t.Fatalf("readiness waits: agent=%d cloud-init=%d", vms.waitAgent, vms.waitCloudInit)
+	if instanceBackend.waitAgent != 1 || instanceBackend.waitCloudInit != 0 {
+		t.Fatalf("readiness waits: agent=%d cloud-init=%d", instanceBackend.waitAgent, instanceBackend.waitCloudInit)
 	}
-	if !bytes.Contains(vms.runnerConfig, []byte("runner-token")) {
+	if !bytes.Contains(instanceBackend.runnerConfig, []byte("runner-token")) {
 		t.Fatal("runner config does not contain token")
 	}
 }
@@ -80,9 +80,9 @@ func TestImageRunnerAgentFailureCleansUp(t *testing.T) {
 	forge := &fakeForge{
 		jobs: []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
 	}
-	vms := &fakeVM{waitAgentErr: agentErr}
+	instanceBackend := &fakeInstances{waitAgentErr: agentErr}
 	repository := &fakeRepository{}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 	pool := testPool()
 	pool.Instance.RunnerInstall = config.RunnerInstallImage
 
@@ -90,7 +90,7 @@ func TestImageRunnerAgentFailureCleansUp(t *testing.T) {
 	if !errors.Is(err, agentErr) {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if !vms.deleted || !forge.deleted {
+	if !instanceBackend.deleted || !forge.deleted {
 		t.Fatal("failed image runner resources were not deleted")
 	}
 	if repository.result.Failure.Stage != reconcile.StageWaitAgent {
@@ -103,14 +103,14 @@ func TestReconcilePoolCompletesFastWorkflow(t *testing.T) {
 		jobs:      []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
 		runnerErr: &forgejo.HTTPError{StatusCode: http.StatusNotFound, Body: "missing"},
 	}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if !vms.deleted || !forge.deleted {
+	if !instanceBackend.deleted || !forge.deleted {
 		t.Fatal("completed runner resources were not deleted")
 	}
 	if repository.instance.State != instance.StateFinished {
@@ -125,22 +125,22 @@ func TestReconcilePoolIgnoresUnmatchedJob(t *testing.T) {
 	forge := &fakeForge{
 		jobs: []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"other"}}},
 	}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if vms.created.Name != "" {
-		t.Fatalf("created VM %q", vms.created.Name)
+	if instanceBackend.created.Name != "" {
+		t.Fatalf("created instance %q", instanceBackend.created.Name)
 	}
 }
 
 func TestReconcilePoolRecordsForgejoFailure(t *testing.T) {
 	forge := &fakeForge{jobsErr: &forgejo.HTTPError{StatusCode: http.StatusServiceUnavailable, Body: "offline"}}
 	repository := &fakeRepository{}
-	controller := newTestController(forge, &fakeVM{}, repository)
+	controller := newTestController(forge, &fakeInstances{}, repository)
 
 	err := controller.ReconcilePool(context.Background(), testPool())
 	if err == nil {
@@ -156,7 +156,7 @@ func TestReconcilePoolRecordsForgejoFailure(t *testing.T) {
 
 func TestReconcilePoolReportsProgress(t *testing.T) {
 	repository := &fakeRepository{}
-	controller := newTestController(&fakeForge{}, &fakeVM{}, repository)
+	controller := newTestController(&fakeForge{}, &fakeInstances{}, repository)
 
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
@@ -173,12 +173,33 @@ func TestReconcilePoolReportsProgress(t *testing.T) {
 	}
 }
 
-func TestReconcilePoolDeletesCompletedVM(t *testing.T) {
+func TestReconcilePoolBoundsFinalWrite(t *testing.T) {
+	repository := &fakeRepository{}
+	controller := New(&fakeForge{}, &fakeInstances{}, repository, Options{
+		ID:             "primary",
+		ForgeURL:       "https://git.example.com",
+		CleanupTimeout: time.Minute,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := controller.ReconcilePool(ctx, testPool()); err != nil {
+		t.Fatalf("ReconcilePool() error = %v", err)
+	}
+	if !repository.finishHasDeadline {
+		t.Fatal("FinishPool context has no deadline")
+	}
+	if repository.finishContextErr != nil {
+		t.Fatalf("FinishPool context error = %v", repository.finishContextErr)
+	}
+}
+
+func TestReconcilePoolDeletesCompletedInstance(t *testing.T) {
 	forge := &fakeForge{
 		runnerErr: &forgejo.HTTPError{StatusCode: http.StatusNotFound, Body: "missing"},
 	}
-	vms := &fakeVM{managed: []incusvm.ManagedInstance{{
-		ID: "instance-id", Name: "farm-ubuntu-instance", Pool: "ubuntu", Type: "virtual-machine",
+	instanceBackend := &fakeInstances{managed: []incus.ManagedInstance{{
+		ID: "instance-id", Name: "farm-ubuntu-instance", Pool: "ubuntu",
 	}}}
 	repository := &fakeRepository{instance: instance.Instance{
 		ID:             "instance-id",
@@ -188,13 +209,13 @@ func TestReconcilePoolDeletesCompletedVM(t *testing.T) {
 		RunnerID:       42,
 		StateChangedAt: time.Now(),
 	}}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if !vms.deleted {
-		t.Fatal("VM was not deleted")
+	if !instanceBackend.deleted {
+		t.Fatal("instance was not deleted")
 	}
 	if repository.instance.State != instance.StateFinished {
 		t.Fatalf("state = %q", repository.instance.State)
@@ -206,14 +227,14 @@ func TestReconcilePoolDeletesCompletedVM(t *testing.T) {
 
 func TestReconcilePoolCompletesMissingReadyRunner(t *testing.T) {
 	forge := &fakeForge{runnerErr: &forgejo.HTTPError{StatusCode: http.StatusNotFound, Body: "missing"}}
-	vms := &fakeVM{managed: []incusvm.ManagedInstance{{
-		ID: "instance-id", Name: "farm-ubuntu-instance", Pool: "ubuntu", Type: "virtual-machine",
+	instanceBackend := &fakeInstances{managed: []incus.ManagedInstance{{
+		ID: "instance-id", Name: "farm-ubuntu-instance", Pool: "ubuntu",
 	}}}
 	repository := &fakeRepository{instance: instance.Instance{
 		ID: "instance-id", Name: "farm-ubuntu-instance", Pool: "ubuntu",
 		State: instance.StateReady, RunnerID: 42, StateChangedAt: time.Now(),
 	}}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
@@ -223,9 +244,9 @@ func TestReconcilePoolCompletesMissingReadyRunner(t *testing.T) {
 	}
 }
 
-func TestReconcilePoolRecyclesInterruptedVM(t *testing.T) {
+func TestReconcilePoolRecyclesInterruptedInstance(t *testing.T) {
 	forge := &fakeForge{runnerStatus: forgejo.RunnerOffline}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{instance: instance.Instance{
 		ID:       "instance-id",
 		Name:     "farm-ubuntu-instance",
@@ -233,19 +254,19 @@ func TestReconcilePoolRecyclesInterruptedVM(t *testing.T) {
 		State:    instance.StateBootstrapping,
 		RunnerID: 42,
 	}}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if !vms.deleted || !forge.deleted {
+	if !instanceBackend.deleted || !forge.deleted {
 		t.Fatal("interrupted resources were not deleted")
 	}
 }
 
 func TestReconcilePoolAdoptsStartedRunner(t *testing.T) {
 	forge := &fakeForge{runnerStatus: forgejo.RunnerIdle}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{instance: instance.Instance{
 		ID:       "instance-id",
 		Name:     "farm-ubuntu-instance",
@@ -253,13 +274,13 @@ func TestReconcilePoolAdoptsStartedRunner(t *testing.T) {
 		State:    instance.StateBootstrapping,
 		RunnerID: 42,
 	}}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if vms.deleted {
-		t.Fatal("running VM was deleted")
+	if instanceBackend.deleted {
+		t.Fatal("running instance was deleted")
 	}
 	if repository.instance.State != instance.StateReady {
 		t.Fatalf("state = %q", repository.instance.State)
@@ -269,14 +290,14 @@ func TestReconcilePoolAdoptsStartedRunner(t *testing.T) {
 func TestReconcilePoolRetriesDeletion(t *testing.T) {
 	deleteErr := errors.New("Incus unavailable")
 	forge := &fakeForge{}
-	vms := &fakeVM{deleteErr: deleteErr}
+	instanceBackend := &fakeInstances{deleteErr: deleteErr}
 	repository := &fakeRepository{instance: instance.Instance{
 		ID:    "instance-id",
 		Name:  "farm-ubuntu-instance",
 		Pool:  "ubuntu",
 		State: instance.StateCleaning,
 	}}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	err := controller.ReconcilePool(context.Background(), testPool())
 	if !errors.Is(err, deleteErr) {
@@ -290,10 +311,10 @@ func TestReconcilePoolRetriesDeletion(t *testing.T) {
 	}
 }
 
-func TestReconcilePoolScalesDownIdleVM(t *testing.T) {
+func TestReconcilePoolScalesDownIdleInstance(t *testing.T) {
 	now := time.Date(2026, time.September, 18, 12, 0, 0, 0, time.UTC)
 	forge := &fakeForge{runnerStatus: forgejo.RunnerIdle}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{instance: instance.Instance{
 		ID:             "instance-id",
 		Name:           "farm-ubuntu-instance",
@@ -302,7 +323,7 @@ func TestReconcilePoolScalesDownIdleVM(t *testing.T) {
 		RunnerID:       42,
 		StateChangedAt: now.Add(-2 * time.Minute),
 	}}
-	controller := New(forge, vms, repository, Options{
+	controller := New(forge, instanceBackend, repository, Options{
 		ID:       "primary",
 		ForgeURL: "https://git.example.com",
 		Now:      func() time.Time { return now },
@@ -313,15 +334,15 @@ func TestReconcilePoolScalesDownIdleVM(t *testing.T) {
 	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if !vms.deleted {
-		t.Fatal("idle VM was not deleted")
+	if !instanceBackend.deleted {
+		t.Fatal("idle instance was not deleted")
 	}
 }
 
 func TestReconcilePoolHonorsRetryAt(t *testing.T) {
 	now := time.Date(2026, time.September, 18, 12, 0, 0, 0, time.UTC)
 	forge := &fakeForge{}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{instance: instance.Instance{
 		ID:      "instance-id",
 		Name:    "farm-ubuntu-instance",
@@ -329,7 +350,7 @@ func TestReconcilePoolHonorsRetryAt(t *testing.T) {
 		State:   instance.StateCleaning,
 		RetryAt: now.Add(time.Minute),
 	}}
-	controller := New(forge, vms, repository, Options{
+	controller := New(forge, instanceBackend, repository, Options{
 		ID:       "primary",
 		ForgeURL: "https://git.example.com",
 		Now:      func() time.Time { return now },
@@ -338,8 +359,8 @@ func TestReconcilePoolHonorsRetryAt(t *testing.T) {
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if vms.deleted {
-		t.Fatal("VM deletion ignored retry time")
+	if instanceBackend.deleted {
+		t.Fatal("instance deletion ignored retry time")
 	}
 }
 
@@ -351,7 +372,7 @@ func TestBootstrapFailuresPauseAndProbe(t *testing.T) {
 		{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}},
 		{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}},
 	}}
-	vms := &fakeVM{createErr: createErr}
+	instanceBackend := &fakeInstances{createErr: createErr}
 	repository, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "farm.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
@@ -361,7 +382,7 @@ func TestBootstrapFailuresPauseAndProbe(t *testing.T) {
 			t.Errorf("Close() error = %v", err)
 		}
 	})
-	controller := New(forge, vms, repository, Options{
+	controller := New(forge, instanceBackend, repository, Options{
 		ID: "primary", ForgeURL: "https://git.example.com", Now: func() time.Time { return now },
 	})
 	pool := testPool()
@@ -376,7 +397,7 @@ func TestBootstrapFailuresPauseAndProbe(t *testing.T) {
 	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
 		t.Fatalf("paused ReconcilePool() error = %v", err)
 	}
-	if calls := vms.createCount(); calls != pool.Scaling.BootstrapAttemptLimit {
+	if calls := instanceBackend.createCount(); calls != pool.Scaling.BootstrapAttemptLimit {
 		t.Fatalf("create calls while paused = %d", calls)
 	}
 
@@ -384,12 +405,12 @@ func TestBootstrapFailuresPauseAndProbe(t *testing.T) {
 	if err := controller.ReconcilePool(context.Background(), pool); !errors.Is(err, createErr) {
 		t.Fatalf("probe ReconcilePool() error = %v", err)
 	}
-	if calls := vms.createCount(); calls != pool.Scaling.BootstrapAttemptLimit+1 {
+	if calls := instanceBackend.createCount(); calls != pool.Scaling.BootstrapAttemptLimit+1 {
 		t.Fatalf("create calls after probe = %d", calls)
 	}
 
 	now = now.Add(pool.Scaling.BootstrapRetryInterval.Duration)
-	vms.createErr = nil
+	instanceBackend.createErr = nil
 	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
 		t.Fatalf("recovery ReconcilePool() error = %v", err)
 	}
@@ -402,14 +423,14 @@ func TestBootstrapFailuresPauseAndProbe(t *testing.T) {
 	}
 }
 
-func TestEphemeralVMLifecycle(t *testing.T) {
+func TestEphemeralInstanceLifecycle(t *testing.T) {
 	forge := &fakeForge{
 		jobs:         []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
 		runnerStatus: forgejo.RunnerIdle,
 	}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{}
-	controller := New(forge, vms, repository, Options{
+	controller := New(forge, instanceBackend, repository, Options{
 		ID:       "primary",
 		ForgeURL: "https://git.example.com",
 		Install: bootstrap.Install{
@@ -439,7 +460,7 @@ func TestEphemeralVMLifecycle(t *testing.T) {
 	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
-	if repository.instance.State != instance.StateFinished || !vms.deleted {
+	if repository.instance.State != instance.StateFinished || !instanceBackend.deleted {
 		t.Fatalf("completed instance = %#v", repository.instance)
 	}
 }
@@ -450,9 +471,9 @@ func TestFailureCleanupUsesLiveContext(t *testing.T) {
 	forge := &fakeForge{
 		jobs: []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
 	}
-	vms := &fakeVM{createErr: createErr, cancelOnCreate: cancel}
+	instanceBackend := &fakeInstances{createErr: createErr, cancelOnCreate: cancel}
 	repository := &fakeRepository{}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	err := controller.ReconcilePool(ctx, testPool())
 	if !errors.Is(err, createErr) {
@@ -463,42 +484,21 @@ func TestFailureCleanupUsesLiveContext(t *testing.T) {
 	}
 }
 
-func TestReconcilePoolDeletesOrphanedVM(t *testing.T) {
+func TestReconcilePoolDeletesOrphanedInstance(t *testing.T) {
 	forge := &fakeForge{}
-	vms := &fakeVM{managed: []incusvm.ManagedInstance{{
+	instanceBackend := &fakeInstances{managed: []incus.ManagedInstance{{
 		ID:   "orphan-id",
 		Name: "farm-orphan",
 		Pool: "ubuntu",
-		Type: "virtual-machine",
 	}}}
 	repository := &fakeRepository{}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
 	}
-	if !vms.deleted {
-		t.Fatal("orphaned VM was not deleted")
-	}
-}
-
-func TestReconcilePoolRejectsManagedContainer(t *testing.T) {
-	forge := &fakeForge{}
-	vms := &fakeVM{managed: []incusvm.ManagedInstance{{
-		ID:   "container-id",
-		Name: "farm-container",
-		Pool: "ubuntu",
-		Type: "container",
-	}}}
-	repository := &fakeRepository{}
-	controller := newTestController(forge, vms, repository)
-
-	err := controller.ReconcilePool(context.Background(), testPool())
-	if err == nil {
-		t.Fatal("ReconcilePool() error = nil")
-	}
-	if vms.deleted {
-		t.Fatal("managed container was deleted")
+	if !instanceBackend.deleted {
+		t.Fatal("orphaned instance was not deleted")
 	}
 }
 
@@ -507,9 +507,9 @@ func TestReconcilePoolDeletesOrphanedRunner(t *testing.T) {
 		ID:          99,
 		Description: runnerDescription("primary", "ubuntu"),
 	}}}
-	vms := &fakeVM{}
+	instanceBackend := &fakeInstances{}
 	repository := &fakeRepository{}
-	controller := newTestController(forge, vms, repository)
+	controller := newTestController(forge, instanceBackend, repository)
 
 	if err := controller.ReconcilePool(context.Background(), testPool()); err != nil {
 		t.Fatalf("ReconcilePool() error = %v", err)
@@ -527,8 +527,8 @@ func TestScopeForUser(t *testing.T) {
 	}
 }
 
-func newTestController(forge *fakeForge, vms *fakeVM, repository *fakeRepository) *Controller {
-	return New(forge, vms, repository, Options{
+func newTestController(forge *fakeForge, instanceBackend *fakeInstances, repository *fakeRepository) *Controller {
+	return New(forge, instanceBackend, repository, Options{
 		ID:       "primary",
 		ForgeURL: "https://git.example.com",
 	})
@@ -541,7 +541,7 @@ func testPool() config.Pool {
 		Labels: []string{"farm-ubuntu"},
 		Instance: config.Instance{
 			Image:    config.Image{Alias: "farm-ubuntu-24.04"},
-			Profiles: []string{"farm-vm"},
+			Profiles: []string{"farm-instance"},
 		},
 		Scaling: config.Scaling{
 			MaxInstances:           2,
@@ -598,10 +598,10 @@ func (f *fakeForge) DeleteRunner(ctx context.Context, _ forgejo.Scope, _ int64) 
 	return nil
 }
 
-type fakeVM struct {
+type fakeInstances struct {
 	mu             sync.Mutex
-	created        incusvm.InstanceSpec
-	managed        []incusvm.ManagedInstance
+	created        incus.InstanceSpec
+	managed        []incus.ManagedInstance
 	runnerConfig   []byte
 	deleted        bool
 	deleteErr      error
@@ -614,11 +614,11 @@ type fakeVM struct {
 	createCalls    int
 }
 
-func (v *fakeVM) Managed(context.Context, string, string) ([]incusvm.ManagedInstance, error) {
+func (v *fakeInstances) Managed(context.Context, string, string) ([]incus.ManagedInstance, error) {
 	return v.managed, nil
 }
 
-func (v *fakeVM) Create(_ context.Context, spec incusvm.InstanceSpec) error {
+func (v *fakeInstances) Create(_ context.Context, spec incus.InstanceSpec) error {
 	v.mu.Lock()
 	v.createCalls++
 	cancel := v.cancelOnCreate
@@ -632,35 +632,35 @@ func (v *fakeVM) Create(_ context.Context, spec incusvm.InstanceSpec) error {
 		return createErr
 	}
 	v.created = spec
-	v.managed = append(v.managed, incusvm.ManagedInstance{
-		ID: spec.ID, Name: spec.Name, Pool: spec.Pool, Type: "virtual-machine",
+	v.managed = append(v.managed, incus.ManagedInstance{
+		ID: spec.ID, Name: spec.Name, Pool: spec.Pool,
 	})
 	return nil
 }
 
-func (v *fakeVM) createCount() int {
+func (v *fakeInstances) createCount() int {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
 	return v.createCalls
 }
 
-func (v *fakeVM) WaitCloudInit(context.Context, string) error {
+func (v *fakeInstances) WaitCloudInit(context.Context, string) error {
 	v.waitCloudInit++
 	return nil
 }
 
-func (v *fakeVM) WaitAgent(context.Context, string) error {
+func (v *fakeInstances) WaitAgent(context.Context, string) error {
 	v.waitAgent++
 	return v.waitAgentErr
 }
 
-func (v *fakeVM) PushRunnerConfig(_ context.Context, _ string, data []byte) error {
+func (v *fakeInstances) PushRunnerConfig(_ context.Context, _ string, data []byte) error {
 	v.runnerConfig = append([]byte(nil), data...)
 	return nil
 }
 
-func (v *fakeVM) Delete(ctx context.Context, _ string) error {
+func (v *fakeInstances) Delete(ctx context.Context, _ string) error {
 	v.deleted = true
 	v.deleteCtxErr = ctx.Err()
 	v.managed = nil
@@ -668,11 +668,13 @@ func (v *fakeVM) Delete(ctx context.Context, _ string) error {
 }
 
 type fakeRepository struct {
-	instance    instance.Instance
-	observation store.PoolObservation
-	result      store.PoolResult
-	progress    []store.PoolProgress
-	bootstrap   store.BootstrapState
+	instance          instance.Instance
+	observation       store.PoolObservation
+	result            store.PoolResult
+	progress          []store.PoolProgress
+	bootstrap         store.BootstrapState
+	finishHasDeadline bool
+	finishContextErr  error
 }
 
 func (r *fakeRepository) Create(_ context.Context, instance instance.Instance) error {
@@ -701,8 +703,10 @@ func (r *fakeRepository) ProgressPool(_ context.Context, progress store.PoolProg
 	return nil
 }
 
-func (r *fakeRepository) FinishPool(_ context.Context, result store.PoolResult) error {
+func (r *fakeRepository) FinishPool(ctx context.Context, result store.PoolResult) error {
 	r.result = result
+	_, r.finishHasDeadline = ctx.Deadline()
+	r.finishContextErr = ctx.Err()
 	return nil
 }
 

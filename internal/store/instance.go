@@ -24,7 +24,7 @@ func (d *DB) Create(ctx context.Context, record instance.Instance) error {
 	if err != nil {
 		return fmt.Errorf("begin instance creation: %w", err)
 	}
-	defer tx.Rollback()
+	defer rollback(tx)
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO instances (id, name, pool, state, stage, result, reason, runner_id, error)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -82,7 +82,7 @@ func (d *DB) ListEvents(ctx context.Context, filter EventFilter) ([]Event, error
 	if err != nil {
 		return nil, fmt.Errorf("list instance events: %w", err)
 	}
-	defer rows.Close()
+	defer releaseRows(rows)
 
 	var events []Event
 	for rows.Next() {
@@ -200,7 +200,7 @@ func (d *DB) mutate(ctx context.Context, id string, kind EventKind, change func(
 	if err != nil {
 		return fmt.Errorf("begin instance update: %w", err)
 	}
-	defer tx.Rollback()
+	defer rollback(tx)
 
 	before, err := scanInstance(tx.QueryRowContext(ctx, instanceSelect+` WHERE id = ?`, id))
 	if err != nil {
@@ -265,7 +265,7 @@ func scanInstance(row scanner) (instance.Instance, error) {
 }
 
 func scanInstances(rows *sql.Rows, operation string) ([]instance.Instance, error) {
-	defer rows.Close()
+	defer releaseRows(rows)
 	var records []instance.Instance
 	for rows.Next() {
 		record, err := scanInstance(rows)

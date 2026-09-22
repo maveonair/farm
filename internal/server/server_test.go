@@ -1,12 +1,16 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +18,29 @@ import (
 	"github.com/maveonair/farm/internal/instance"
 	"github.com/maveonair/farm/internal/store"
 )
+
+func TestWriteJSONLogsWriteFailure(t *testing.T) {
+	var logs bytes.Buffer
+	server := &Server{logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+
+	server.writeJSON(context.Background(), failingWriter{}, http.StatusOK, map[string]string{"status": "ok"})
+
+	if !strings.Contains(logs.String(), "write HTTP response") {
+		t.Fatalf("log = %q", logs.String())
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Header() http.Header {
+	return make(http.Header)
+}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errors.New("client disconnected")
+}
+
+func (failingWriter) WriteHeader(int) {}
 
 func TestHealth(t *testing.T) {
 	monitor := &Monitor{}

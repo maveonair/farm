@@ -198,7 +198,10 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any)
 	if err != nil {
 		return fmt.Errorf("send request: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		// ReadAll reports response failures. Close only releases transport resources.
+		_ = response.Body.Close()
+	}()
 
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseSize))
 	if err != nil {

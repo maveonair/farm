@@ -15,24 +15,24 @@ file.
 
 ## 2. Prepare Incus
 
-Create a dedicated project, managed network, and VM profile. Replace `default`
+Create a dedicated project, managed network, and instance profile. Replace `default`
 with the storage pool FARM should use:
 
 ```sh
 incus project create farm
 incus network create farmbr0 --project farm
-incus profile create farm-vm --project farm
-incus profile device add farm-vm root disk path=/ pool=default --project farm
-incus profile device add farm-vm eth0 nic network=farmbr0 name=eth0 \
+incus profile create farm-instance --project farm
+incus profile device add farm-instance root disk path=/ pool=default --project farm
+incus profile device add farm-instance eth0 nic network=farmbr0 name=eth0 \
   --project farm
 ```
 
 The profile must not expose host filesystems, the Incus socket, or host
 devices.
 
-For controller installation, the VM image must:
+For controller installation, the instance image must:
 
-- support Incus virtual machines
+- be usable as an Incus instance
 - run systemd and cloud-init
 - include the Incus agent
 - reach Forgejo and the runner download URL over HTTPS
@@ -41,7 +41,7 @@ FARM installs `ca-certificates`, `curl`, `git`, and `nodejs` through cloud-init.
 Prepared images can instead use `runner_installation: image`; see
 [Image-provided runner](#image-provided-runner).
 
-Copy a VM image into the project:
+Copy an instance image into the project:
 
 ```sh
 incus image copy images:ubuntu/24.04/cloud local: --vm \
@@ -89,7 +89,7 @@ sudoedit /etc/farm/forgejo-token
 ## 4. Configure the runner
 
 Download the release selected in `runner.download_url` and calculate its
-digest. Match the binary architecture to the VM image.
+digest. Match the binary architecture to the instance image.
 
 ```sh
 curl --fail --location --output forgejo-runner \
@@ -98,7 +98,7 @@ sha256sum forgejo-runner
 rm forgejo-runner
 ```
 
-Set the digest in `runner.sha256`. FARM verifies it inside every new VM.
+Set the digest in `runner.sha256`. FARM verifies it inside every new instance.
 
 Skip these fields when every pool uses an image-provided runner.
 
@@ -265,7 +265,7 @@ jobs:
       - run: uname -a
 ```
 
-Push the workflow and watch FARM create the VM:
+Push the workflow and watch FARM create the instance:
 
 ```sh
 sudo journalctl -u farm -f
@@ -274,7 +274,7 @@ incus list --project farm
 
 The interface should show the instance moving through bootstrapping, ready or
 running, cleaning, and finished. After the job completes, confirm that its
-runner registration and VM are removed. A short workflow may complete before
+runner registration and instance are removed. A short workflow may complete before
 every intermediate state is observed.
 
 ## Operations
@@ -294,7 +294,7 @@ sudo journalctl -u farm -p warning
 
 ## Troubleshooting
 
-### No VM is created
+### No instance is created
 
 Check that the job scope matches the pool and that its first `runs-on` value is
 the pool's first label. Confirm the token can administer Actions runners in
@@ -306,19 +306,19 @@ Confirm the `farm` user can open the configured socket. Restart FARM after
 changing group membership. For HTTPS, check certificate trust and project
 restriction.
 
-### VM startup times out
+### Instance startup times out
 
 Confirm the image has systemd and a working Incus agent. Controller-installed
-runners also require cloud-init. Check VM network, DNS, Forgejo access, and,
+runners also require cloud-init. Check instance network, DNS, Forgejo access, and,
 when applicable, runner download access.
 
 ### Runner installation fails
 
-Confirm that `runner.download_url` matches the VM architecture and that
+Confirm that `runner.download_url` matches the instance architecture and that
 `runner.sha256` is the digest of that exact file.
 
 For image-installed runners, confirm the image contract above and inspect
-`forgejo-runner.service` inside the VM.
+`forgejo-runner.service` inside the instance.
 
 ### Health returns 503
 

@@ -127,19 +127,17 @@ func (t *Tracker) markDone(pool string) {
 	delete(t.progress, pool)
 }
 
-func (t *Tracker) Finish(at time.Time, interval time.Duration, succeeded bool) {
+func (t *Tracker) Finish(at time.Time, interval time.Duration, outcome Outcome) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.phase = PhaseIdle
 	t.finishedAt = at
 	grace := max(2*interval, minimumScheduleGrace)
 	t.nextExpectedAt = at.Add(interval + grace)
-	if succeeded {
-		t.lastOutcome = OutcomeSucceeded
+	t.lastOutcome = outcome
+	if outcome == OutcomeSucceeded {
 		t.lastSuccessAt = at
-		return
 	}
-	t.lastOutcome = OutcomeFailed
 }
 
 // Success preserves the small monitor API used by callers without cycle details.

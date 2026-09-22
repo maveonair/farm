@@ -51,7 +51,7 @@ func (d *DB) ReserveBootstrap(ctx context.Context, request BootstrapRequest) (Bo
 	if err != nil {
 		return BootstrapReservation{}, fmt.Errorf("begin bootstrap reservation: %w", err)
 	}
-	defer tx.Rollback()
+	defer rollback(tx)
 
 	var state BootstrapState
 	if err := tx.QueryRowContext(ctx, `
@@ -135,7 +135,7 @@ func (d *DB) FinishPool(ctx context.Context, result PoolResult) error {
 	if err != nil {
 		return fmt.Errorf("begin pool result: %w", err)
 	}
-	defer tx.Rollback()
+	defer rollback(tx)
 
 	var incidentID any
 	if result.State == RuntimeFailed {
@@ -236,18 +236,17 @@ func (d *DB) InterruptPools(ctx context.Context, at time.Time) error {
 	if err != nil {
 		return fmt.Errorf("list interrupted pools: %w", err)
 	}
+	defer releaseRows(rows)
 	type run struct{ pool, id string }
 	var runs []run
 	for rows.Next() {
 		var item run
 		if err := rows.Scan(&item.pool, &item.id); err != nil {
-			rows.Close()
 			return fmt.Errorf("scan interrupted pool: %w", err)
 		}
 		runs = append(runs, item)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return fmt.Errorf("list interrupted pools: %w", err)
 	}
 	if err := rows.Close(); err != nil {
@@ -295,7 +294,7 @@ func (d *DB) ListPoolData(ctx context.Context) ([]PoolData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list pool data: %w", err)
 	}
-	defer rows.Close()
+	defer releaseRows(rows)
 
 	var result []PoolData
 	for rows.Next() {
@@ -345,7 +344,7 @@ func (d *DB) ListIncidents(ctx context.Context, filter IncidentFilter) ([]PoolIn
 	if err != nil {
 		return nil, fmt.Errorf("list pool incidents: %w", err)
 	}
-	defer rows.Close()
+	defer releaseRows(rows)
 
 	var incidents []PoolIncident
 	for rows.Next() {

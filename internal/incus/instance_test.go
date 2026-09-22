@@ -31,10 +31,32 @@ func TestConnectRejectsUnixCertificates(t *testing.T) {
 	}
 }
 
+func TestManagedRejectsContainer(t *testing.T) {
+	client := &execClient{instances: []api.InstanceFull{{Instance: api.Instance{
+		Name: "farm-container",
+		Type: string(api.InstanceTypeContainer),
+		Config: map[string]string{
+			managedKey:    "true",
+			controllerKey: "primary",
+			poolKey:       "ubuntu",
+		},
+	}}}}
+	service := &Service{client: client}
+
+	if _, err := service.Managed(context.Background(), "primary", "ubuntu"); err == nil {
+		t.Fatal("Managed() error = nil")
+	}
+}
+
 type execClient struct {
 	incus.InstanceServer
-	op       incus.Operation
-	commands [][]string
+	op        incus.Operation
+	commands  [][]string
+	instances []api.InstanceFull
+}
+
+func (c *execClient) GetInstancesFull(api.InstanceType) ([]api.InstanceFull, error) {
+	return c.instances, nil
 }
 
 func (c *execClient) ExecInstance(_ string, post api.InstanceExecPost, args *incus.InstanceExecArgs) (incus.Operation, error) {
@@ -62,7 +84,7 @@ func (o *execOperation) Get() api.Operation {
 	return o.operation
 }
 
-func TestCreateRequestIsVM(t *testing.T) {
+func TestCreateRequestIsInstance(t *testing.T) {
 	request, err := createRequest(InstanceSpec{
 		ID:         "instance-id",
 		Name:       "farm-runner-01",
