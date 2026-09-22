@@ -5,6 +5,8 @@ COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || printf none)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GO_LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
+.DEFAULT_GOAL := build
+
 .PHONY: build web-install web-build web-test test vet check clean
 
 web-install:
