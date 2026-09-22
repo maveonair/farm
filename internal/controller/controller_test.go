@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -341,6 +343,65 @@ func TestReconcilePoolHonorsRetryAt(t *testing.T) {
 	}
 }
 
+func TestBootstrapFailuresPauseAndProbe(t *testing.T) {
+	now := time.Date(2026, time.September, 22, 12, 0, 0, 0, time.UTC)
+	createErr := errors.New("image not found")
+	forge := &fakeForge{jobs: []forgejo.Job{
+		{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}},
+		{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}},
+		{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}},
+	}}
+	vms := &fakeVM{createErr: createErr}
+	repository, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "farm.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	controller := New(forge, vms, repository, Options{
+		ID: "primary", ForgeURL: "https://git.example.com", Now: func() time.Time { return now },
+	})
+	pool := testPool()
+	pool.Scaling.MaxInstances = 3
+	pool.Scaling.MaxProvisioning = 3
+	pool.Scaling.BootstrapAttemptLimit = 2
+	pool.Scaling.BootstrapRetryInterval.Duration = time.Hour
+
+	if err := controller.ReconcilePool(context.Background(), pool); !errors.Is(err, createErr) {
+		t.Fatalf("ReconcilePool() error = %v", err)
+	}
+	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
+		t.Fatalf("paused ReconcilePool() error = %v", err)
+	}
+	if calls := vms.createCount(); calls != pool.Scaling.BootstrapAttemptLimit {
+		t.Fatalf("create calls while paused = %d", calls)
+	}
+
+	now = now.Add(pool.Scaling.BootstrapRetryInterval.Duration)
+	if err := controller.ReconcilePool(context.Background(), pool); !errors.Is(err, createErr) {
+		t.Fatalf("probe ReconcilePool() error = %v", err)
+	}
+	if calls := vms.createCount(); calls != pool.Scaling.BootstrapAttemptLimit+1 {
+		t.Fatalf("create calls after probe = %d", calls)
+	}
+
+	now = now.Add(pool.Scaling.BootstrapRetryInterval.Duration)
+	vms.createErr = nil
+	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
+		t.Fatalf("recovery ReconcilePool() error = %v", err)
+	}
+	data, err := repository.ListPoolData(context.Background())
+	if err != nil {
+		t.Fatalf("ListPoolData() error = %v", err)
+	}
+	if len(data) != 1 || data[0].Runtime.Bootstrap.Attempts != 0 || !data[0].Runtime.Bootstrap.RetryAt.IsZero() {
+		t.Fatalf("pool data after recovery = %#v", data)
+	}
+}
+
 func TestEphemeralVMLifecycle(t *testing.T) {
 	forge := &fakeForge{
 		jobs:         []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
@@ -483,16 +544,19 @@ func testPool() config.Pool {
 			Profiles: []string{"farm-vm"},
 		},
 		Scaling: config.Scaling{
-			MaxInstances:    2,
-			MaxProvisioning: 1,
-			StartupTimeout:  config.Duration{Duration: time.Minute},
-			IdleTimeout:     config.Duration{Duration: time.Minute},
-			MaxLifetime:     config.Duration{Duration: time.Hour},
+			MaxInstances:           2,
+			MaxProvisioning:        1,
+			BootstrapAttemptLimit:  5,
+			BootstrapRetryInterval: config.Duration{Duration: 15 * time.Minute},
+			StartupTimeout:         config.Duration{Duration: time.Minute},
+			IdleTimeout:            config.Duration{Duration: time.Minute},
+			MaxLifetime:            config.Duration{Duration: time.Hour},
 		},
 	}
 }
 
 type fakeForge struct {
+	mu           sync.Mutex
 	jobs         []forgejo.Job
 	jobsErr      error
 	runners      []forgejo.Runner
@@ -526,12 +590,16 @@ func (f *fakeForge) Runner(context.Context, forgejo.Scope, int64) (forgejo.Runne
 }
 
 func (f *fakeForge) DeleteRunner(ctx context.Context, _ forgejo.Scope, _ int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.deleted = true
 	f.deleteCtxErr = ctx.Err()
 	return nil
 }
 
 type fakeVM struct {
+	mu             sync.Mutex
 	created        incusvm.InstanceSpec
 	managed        []incusvm.ManagedInstance
 	runnerConfig   []byte
@@ -543,6 +611,7 @@ type fakeVM struct {
 	waitAgent      int
 	waitAgentErr   error
 	waitCloudInit  int
+	createCalls    int
 }
 
 func (v *fakeVM) Managed(context.Context, string, string) ([]incusvm.ManagedInstance, error) {
@@ -550,17 +619,30 @@ func (v *fakeVM) Managed(context.Context, string, string) ([]incusvm.ManagedInst
 }
 
 func (v *fakeVM) Create(_ context.Context, spec incusvm.InstanceSpec) error {
-	if v.cancelOnCreate != nil {
-		v.cancelOnCreate()
+	v.mu.Lock()
+	v.createCalls++
+	cancel := v.cancelOnCreate
+	createErr := v.createErr
+	v.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
 	}
-	if v.createErr != nil {
-		return v.createErr
+	if createErr != nil {
+		return createErr
 	}
 	v.created = spec
 	v.managed = append(v.managed, incusvm.ManagedInstance{
 		ID: spec.ID, Name: spec.Name, Pool: spec.Pool, Type: "virtual-machine",
 	})
 	return nil
+}
+
+func (v *fakeVM) createCount() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	return v.createCalls
 }
 
 func (v *fakeVM) WaitCloudInit(context.Context, string) error {
@@ -590,6 +672,7 @@ type fakeRepository struct {
 	observation store.PoolObservation
 	result      store.PoolResult
 	progress    []store.PoolProgress
+	bootstrap   store.BootstrapState
 }
 
 func (r *fakeRepository) Create(_ context.Context, instance instance.Instance) error {
@@ -663,5 +746,33 @@ func (r *fakeRepository) Retry(_ context.Context, _ string, message string, retr
 	r.instance.RetryCount++
 	r.instance.RetryAt = retryAt
 	r.instance.Error = message
+	return nil
+}
+
+func (r *fakeRepository) ReserveBootstrap(_ context.Context, request store.BootstrapRequest) (store.BootstrapReservation, error) {
+	if r.bootstrap.Attempts >= request.Limit {
+		if !r.bootstrap.RetryAt.IsZero() && request.Now.Before(r.bootstrap.RetryAt) {
+			return store.BootstrapReservation{State: r.bootstrap}, nil
+		}
+		if r.bootstrap.RetryAt.IsZero() {
+			r.bootstrap.RetryAt = request.RetryAt
+			return store.BootstrapReservation{State: r.bootstrap}, nil
+		}
+		r.bootstrap.RetryAt = request.RetryAt
+		return store.BootstrapReservation{Count: 1, Probe: true, State: r.bootstrap}, nil
+	}
+
+	count := min(request.Wanted, request.Limit-r.bootstrap.Attempts)
+	r.bootstrap.Attempts += count
+	return store.BootstrapReservation{Count: count, State: r.bootstrap}, nil
+}
+
+func (r *fakeRepository) HoldBootstrap(_ context.Context, _ string, retryAt time.Time) error {
+	r.bootstrap.RetryAt = retryAt
+	return nil
+}
+
+func (r *fakeRepository) ResetBootstrap(context.Context, string) error {
+	r.bootstrap = store.BootstrapState{}
 	return nil
 }

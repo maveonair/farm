@@ -60,6 +60,9 @@ type repository interface {
 	BeginCleanup(context.Context, string, farmInstance.Result, farmInstance.Reason, string) error
 	FinishCleanup(context.Context, string) error
 	Retry(context.Context, string, string, time.Time) error
+	ReserveBootstrap(context.Context, store.BootstrapRequest) (store.BootstrapReservation, error)
+	HoldBootstrap(context.Context, string, time.Time) error
+	ResetBootstrap(context.Context, string) error
 }
 
 type Controller struct {
@@ -270,7 +273,71 @@ func (c *Controller) ReconcilePool(ctx context.Context, pool config.Pool) (recon
 		"needed", needed,
 	)
 
-	return c.provisionMany(ctx, pool, scope, runID, needed)
+	return c.provisionNeeded(ctx, pool, scope, runID, needed)
+}
+
+func (c *Controller) provisionNeeded(ctx context.Context, pool config.Pool, scope forgejo.Scope, runID string, needed int) error {
+	if needed == 0 {
+		return nil
+	}
+
+	now := c.now()
+	reservation, err := c.store.ReserveBootstrap(ctx, store.BootstrapRequest{
+		Pool: pool.Name, Wanted: needed, Limit: pool.Scaling.BootstrapAttemptLimit,
+		Now: now, RetryAt: now.Add(pool.Scaling.BootstrapRetryInterval.Duration),
+	})
+	if err != nil {
+		return operationError(reconcile.StagePersistState, reconcile.FailureDatabase, farmInstance.Instance{}, err)
+	}
+	if reservation.Count == 0 {
+		return nil
+	}
+	if reservation.Probe {
+		c.logger.InfoContext(ctx, "bootstrap recovery probe started",
+			"event", "bootstrap_probe_started",
+			"pool", pool.Name,
+			"bootstrap_attempts", reservation.State.Attempts,
+			"bootstrap_attempt_limit", pool.Scaling.BootstrapAttemptLimit,
+		)
+	}
+
+	result := c.provisionMany(ctx, pool, scope, runID, reservation.Count)
+	if result.succeeded > 0 {
+		if err := c.store.ResetBootstrap(ctx, pool.Name); err != nil {
+			return errors.Join(result.err,
+				operationError(reconcile.StagePersistState, reconcile.FailureDatabase, farmInstance.Instance{}, err))
+		}
+		if reservation.Probe {
+			c.logger.InfoContext(ctx, "bootstrap circuit recovered",
+				"event", "bootstrap_circuit_recovered",
+				"pool", pool.Name,
+			)
+		}
+		return result.err
+	}
+	if result.err == nil || reservation.State.Attempts < pool.Scaling.BootstrapAttemptLimit {
+		return result.err
+	}
+
+	retryAt := c.now().Add(pool.Scaling.BootstrapRetryInterval.Duration)
+	if err := c.store.HoldBootstrap(ctx, pool.Name, retryAt); err != nil {
+		return errors.Join(result.err,
+			operationError(reconcile.StagePersistState, reconcile.FailureDatabase, farmInstance.Instance{}, err))
+	}
+	event := "bootstrap_circuit_opened"
+	message := "bootstrap circuit opened"
+	if reservation.Probe {
+		event = "bootstrap_probe_failed"
+		message = "bootstrap recovery probe failed"
+	}
+	c.logger.WarnContext(ctx, message,
+		"event", event,
+		"pool", pool.Name,
+		"bootstrap_attempts", reservation.State.Attempts,
+		"bootstrap_attempt_limit", pool.Scaling.BootstrapAttemptLimit,
+		"bootstrap_retry_at", retryAt,
+	)
+	return result.err
 }
 
 func (c *Controller) maintenanceBudget(pool config.Pool) time.Duration {

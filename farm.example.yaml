@@ -35,3 +35,5 @@ pools:
         limits.memory: 8GiB
     scaling:
       max_instances: 8
+      bootstrap_attempt_limit: 5
+      bootstrap_retry_interval: 15m

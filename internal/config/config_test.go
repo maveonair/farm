@@ -154,6 +154,18 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.Pools[0].Scaling.MaxProvisioning != defaultMaxProvisioning || cfg.Pools[0].Scaling.StartupTimeout.Duration != defaultStartupTimeout {
 		t.Fatalf("scaling defaults = %#v", cfg.Pools[0].Scaling)
 	}
+	if cfg.Pools[0].Scaling.BootstrapAttemptLimit != defaultBootstrapAttemptLimit || cfg.Pools[0].Scaling.BootstrapRetryInterval.Duration != defaultBootstrapRetryInterval {
+		t.Fatalf("bootstrap defaults = %#v", cfg.Pools[0].Scaling)
+	}
+}
+
+func TestLoadRejectsNegativeBootstrapLimit(t *testing.T) {
+	contents := strings.Replace(validConfig, "      max_instances: 4", "      max_instances: 4\n      bootstrap_attempt_limit: -1", 1)
+
+	_, err := Load(writeConfig(t, contents))
+	if err == nil || !strings.Contains(err.Error(), "bootstrap_attempt_limit") {
+		t.Fatalf("Load() error = %v", err)
+	}
 }
 
 func TestLoadAcceptsUserScope(t *testing.T) {

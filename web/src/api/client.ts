@@ -69,6 +69,12 @@ export interface Pool {
   idle_timeout: string
   max_lifetime: string
   capacity: Capacity
+  bootstrap: {
+    attempts: number
+    attempt_limit: number
+    paused: boolean
+    retry_at?: string
+  }
   runtime: {
     state?: 'running' | 'succeeded' | 'failed'
     run_id?: string

@@ -10,9 +10,14 @@ import (
 	"github.com/maveonair/farm/internal/reconcile"
 )
 
-func (c *Controller) provisionMany(ctx context.Context, pool config.Pool, scope forgejo.Scope, runID string, count int) error {
+type provisionResult struct {
+	succeeded int
+	err       error
+}
+
+func (c *Controller) provisionMany(ctx context.Context, pool config.Pool, scope forgejo.Scope, runID string, count int) provisionResult {
 	if count == 0 {
-		return nil
+		return provisionResult{}
 	}
 
 	provisionCtx, cancel := context.WithCancel(ctx)
@@ -25,13 +30,16 @@ func (c *Controller) provisionMany(ctx context.Context, pool config.Pool, scope 
 	}
 
 	var result []error
+	succeeded := 0
 	for range count {
 		if err := <-errs; err != nil {
 			result = append(result, err)
 			cancel()
+			continue
 		}
+		succeeded++
 	}
-	return errors.Join(result...)
+	return provisionResult{succeeded: succeeded, err: errors.Join(result...)}
 }
 
 func (c *Controller) reconcileInstances(ctx context.Context, pool config.Pool, scope forgejo.Scope) error {

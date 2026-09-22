@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 func (d *DB) initialize(ctx context.Context) error {
 	for _, pragma := range []string{
@@ -26,6 +26,9 @@ func (d *DB) initialize(ctx context.Context) error {
 	if version == schemaVersion {
 		return nil
 	}
+	if version == 1 {
+		return d.migrateV1(ctx)
+	}
 	if version != 0 {
 		return fmt.Errorf("unsupported database schema version %d", version)
 	}
@@ -43,6 +46,28 @@ func (d *DB) initialize(ctx context.Context) error {
 
 	if _, err := d.db.ExecContext(ctx, schema()); err != nil {
 		return fmt.Errorf("create database schema: %w", err)
+	}
+	return nil
+}
+
+func (d *DB) migrateV1(ctx context.Context) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin database migration: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, statement := range []string{
+		`ALTER TABLE pool_runtime ADD COLUMN bootstrap_attempts INTEGER NOT NULL DEFAULT 0 CHECK (bootstrap_attempts >= 0)`,
+		`ALTER TABLE pool_runtime ADD COLUMN bootstrap_retry_at DATETIME`,
+		fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion),
+	} {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate database: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit database migration: %w", err)
 	}
 	return nil
 }
@@ -116,6 +141,8 @@ CREATE TABLE pool_runtime (
 	current_stage TEXT NOT NULL DEFAULT '',
 	stage_started_at DATETIME,
 	stage_deadline_at DATETIME,
+	bootstrap_attempts INTEGER NOT NULL DEFAULT 0 CHECK (bootstrap_attempts >= 0),
+	bootstrap_retry_at DATETIME,
 	active_incident_id INTEGER,
 	FOREIGN KEY (active_incident_id) REFERENCES pool_incidents(id)
 );

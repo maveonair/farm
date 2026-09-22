@@ -19,14 +19,16 @@ const sha256Length = 64
 const maxNameLength = 40
 
 const (
-	defaultReconcileInterval = 5 * time.Second
-	defaultCleanupTimeout    = 2 * time.Minute
-	defaultListen            = "127.0.0.1:8080"
-	defaultForgejoTimeout    = 15 * time.Second
-	defaultMaxProvisioning   = 2
-	defaultStartupTimeout    = 10 * time.Minute
-	defaultIdleTimeout       = 5 * time.Minute
-	defaultMaxLifetime       = 6 * time.Hour
+	defaultReconcileInterval      = 5 * time.Second
+	defaultCleanupTimeout         = 2 * time.Minute
+	defaultListen                 = "127.0.0.1:8080"
+	defaultForgejoTimeout         = 15 * time.Second
+	defaultMaxProvisioning        = 2
+	defaultBootstrapAttemptLimit  = 5
+	defaultBootstrapRetryInterval = 15 * time.Minute
+	defaultStartupTimeout         = 10 * time.Minute
+	defaultIdleTimeout            = 5 * time.Minute
+	defaultMaxLifetime            = 6 * time.Hour
 )
 
 type Config struct {
@@ -174,12 +176,14 @@ func (i *Image) UnmarshalYAML(node *yaml.Node) error {
 }
 
 type Scaling struct {
-	MinIdle         int      `yaml:"min_idle"`
-	MaxInstances    int      `yaml:"max_instances"`
-	MaxProvisioning int      `yaml:"max_provisioning"`
-	StartupTimeout  Duration `yaml:"startup_timeout"`
-	IdleTimeout     Duration `yaml:"idle_timeout"`
-	MaxLifetime     Duration `yaml:"max_lifetime"`
+	MinIdle                int      `yaml:"min_idle"`
+	MaxInstances           int      `yaml:"max_instances"`
+	MaxProvisioning        int      `yaml:"max_provisioning"`
+	BootstrapAttemptLimit  int      `yaml:"bootstrap_attempt_limit"`
+	BootstrapRetryInterval Duration `yaml:"bootstrap_retry_interval"`
+	StartupTimeout         Duration `yaml:"startup_timeout"`
+	IdleTimeout            Duration `yaml:"idle_timeout"`
+	MaxLifetime            Duration `yaml:"max_lifetime"`
 }
 
 type Duration struct {
@@ -253,6 +257,12 @@ func (c *Config) applyDefaults() {
 		scaling := &c.Pools[index].Scaling
 		if scaling.MaxProvisioning == 0 {
 			scaling.MaxProvisioning = defaultMaxProvisioning
+		}
+		if scaling.BootstrapAttemptLimit == 0 {
+			scaling.BootstrapAttemptLimit = defaultBootstrapAttemptLimit
+		}
+		if scaling.BootstrapRetryInterval.Duration == 0 {
+			scaling.BootstrapRetryInterval.Duration = defaultBootstrapRetryInterval
 		}
 		if scaling.StartupTimeout.Duration == 0 {
 			scaling.StartupTimeout.Duration = defaultStartupTimeout
@@ -467,6 +477,12 @@ func (p Pool) validate() error {
 	}
 	if p.Scaling.MaxProvisioning < 1 {
 		return errors.New("scaling.max_provisioning must be positive")
+	}
+	if p.Scaling.BootstrapAttemptLimit < 1 {
+		return errors.New("scaling.bootstrap_attempt_limit must be positive")
+	}
+	if p.Scaling.BootstrapRetryInterval.Duration <= 0 {
+		return errors.New("scaling.bootstrap_retry_interval must be positive")
 	}
 	if p.Scaling.StartupTimeout.Duration <= 0 {
 		return errors.New("scaling.startup_timeout must be positive")

@@ -277,6 +277,8 @@ trusted configuration; review their devices carefully.
 | `min_idle`         | Number of ready VMs kept available when no jobs wait. Defaults to `0`. |
 | `max_instances`    | Maximum non-finished VMs, including running and cleaning VMs.          |
 | `max_provisioning` | Maximum concurrent VM startups. Defaults to `2`.                       |
+| `bootstrap_attempt_limit` | Unsuccessful VM startup attempts before provisioning pauses. Defaults to `5`. |
+| `bootstrap_retry_interval` | Delay before one recovery probe. Defaults to `15m`.            |
 | `startup_timeout`  | Registration and startup deadline. Defaults to `10m`.                  |
 | `idle_timeout`     | Excess ready VM idle time. Defaults to `5m`.                           |
 | `max_lifetime`     | Running instance lifetime. Defaults to `6h`.                           |
@@ -284,6 +286,22 @@ trusted configuration; review their devices carefully.
 FARM targets enough ready or bootstrapping capacity for waiting jobs plus
 `min_idle`. `max_instances` caps total pool size; `max_provisioning` caps
 in-flight startup work.
+
+After `bootstrap_attempt_limit` consecutive unsuccessful starts, FARM stops
+creating VMs for the pool. Existing runners continue operating. After
+`bootstrap_retry_interval`, FARM starts one probe VM. A successful start clears
+the failure count and resumes normal provisioning; another failure restarts the
+delay. This state persists across FARM restarts.
+
+An attempt is consumed when FARM starts provisioning. Interrupted attempts,
+including controller shutdowns and canceled concurrent startups, count toward
+the limit. This conservative accounting prevents restarts from bypassing the
+limit.
+
+A paused pool does not fail `/healthz`: reconciliation is working and enforcing
+the configured safety limit. The pools API and interface report the pause, and
+transition logs record when the circuit opens, probes, and recovers. The
+provisioning incident resolves after FARM successfully enters the paused state.
 
 For example:
 

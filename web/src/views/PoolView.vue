@@ -42,6 +42,13 @@ const error = computed(
         </div>
         <IncidentPanel v-if="pool.incident" :incident="pool.incident" class="mb-6" />
         <div
+          v-if="pool.bootstrap.paused"
+          class="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+        >
+          <strong>Provisioning paused.</strong> {{ pool.bootstrap.attempts }} unsuccessful starts
+          reached the configured limit. The next probe is {{ relative(pool.bootstrap.retry_at) }}.
+        </div>
+        <div
           v-if="pool.observation_stale"
           class="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
         >
@@ -90,6 +97,10 @@ const error = computed(
             <div>
               <dt class="text-slate-500">Max provisioning</dt>
               <dd class="mt-1">{{ pool.max_provisioning }}</dd>
+            </div>
+            <div>
+              <dt class="text-slate-500">Bootstrap attempt limit</dt>
+              <dd class="mt-1">{{ pool.bootstrap.attempt_limit }}</dd>
             </div>
             <div>
               <dt class="text-slate-500">Startup timeout</dt>
