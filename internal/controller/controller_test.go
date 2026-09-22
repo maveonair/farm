@@ -49,6 +49,53 @@ func TestReconcilePoolProvisionsVM(t *testing.T) {
 	}
 }
 
+func TestReconcilePoolUsesImageRunner(t *testing.T) {
+	forge := &fakeForge{
+		jobs: []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
+	}
+	vms := &fakeVM{}
+	repository := &fakeRepository{}
+	controller := newTestController(forge, vms, repository)
+	pool := testPool()
+	pool.Instance.RunnerInstall = config.RunnerInstallImage
+
+	if err := controller.ReconcilePool(context.Background(), pool); err != nil {
+		t.Fatalf("ReconcilePool() error = %v", err)
+	}
+	if len(vms.created.CloudInit) != 0 {
+		t.Fatal("image runner received cloud-init")
+	}
+	if vms.waitAgent != 1 || vms.waitCloudInit != 0 {
+		t.Fatalf("readiness waits: agent=%d cloud-init=%d", vms.waitAgent, vms.waitCloudInit)
+	}
+	if !bytes.Contains(vms.runnerConfig, []byte("runner-token")) {
+		t.Fatal("runner config does not contain token")
+	}
+}
+
+func TestImageRunnerAgentFailureCleansUp(t *testing.T) {
+	agentErr := errors.New("agent unavailable")
+	forge := &fakeForge{
+		jobs: []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
+	}
+	vms := &fakeVM{waitAgentErr: agentErr}
+	repository := &fakeRepository{}
+	controller := newTestController(forge, vms, repository)
+	pool := testPool()
+	pool.Instance.RunnerInstall = config.RunnerInstallImage
+
+	err := controller.ReconcilePool(context.Background(), pool)
+	if !errors.Is(err, agentErr) {
+		t.Fatalf("ReconcilePool() error = %v", err)
+	}
+	if !vms.deleted || !forge.deleted {
+		t.Fatal("failed image runner resources were not deleted")
+	}
+	if repository.result.Failure.Stage != reconcile.StageWaitAgent {
+		t.Fatalf("failure stage = %q", repository.result.Failure.Stage)
+	}
+}
+
 func TestReconcilePoolCompletesFastWorkflow(t *testing.T) {
 	forge := &fakeForge{
 		jobs:      []forgejo.Job{{Status: forgejo.JobWaiting, RunsOn: []string{"farm-ubuntu"}}},
@@ -493,6 +540,9 @@ type fakeVM struct {
 	createErr      error
 	cancelOnCreate func()
 	deleteCtxErr   error
+	waitAgent      int
+	waitAgentErr   error
+	waitCloudInit  int
 }
 
 func (v *fakeVM) Managed(context.Context, string, string) ([]incusvm.ManagedInstance, error) {
@@ -514,7 +564,13 @@ func (v *fakeVM) Create(_ context.Context, spec incusvm.InstanceSpec) error {
 }
 
 func (v *fakeVM) WaitCloudInit(context.Context, string) error {
+	v.waitCloudInit++
 	return nil
+}
+
+func (v *fakeVM) WaitAgent(context.Context, string) error {
+	v.waitAgent++
+	return v.waitAgentErr
 }
 
 func (v *fakeVM) PushRunnerConfig(_ context.Context, _ string, data []byte) error {

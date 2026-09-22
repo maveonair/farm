@@ -87,6 +87,13 @@ type Runner struct {
 	SHA256      string `yaml:"sha256"`
 }
 
+type RunnerInstallMode string
+
+const (
+	RunnerInstallController RunnerInstallMode = "controller"
+	RunnerInstallImage      RunnerInstallMode = "image"
+)
+
 type Pool struct {
 	Name     string   `yaml:"name"`
 	Scope    Scope    `yaml:"scope"`
@@ -112,9 +119,10 @@ const (
 
 // Instance intentionally has no type field. FARM only creates VMs.
 type Instance struct {
-	Image    Image             `yaml:"image"`
-	Profiles []string          `yaml:"profiles"`
-	Config   map[string]string `yaml:"config"`
+	Image         Image             `yaml:"image"`
+	RunnerInstall RunnerInstallMode `yaml:"runner_installation"`
+	Profiles      []string          `yaml:"profiles"`
+	Config        map[string]string `yaml:"config"`
 }
 
 type Image struct {
@@ -238,6 +246,10 @@ func (c *Config) applyDefaults() {
 		c.Forgejo.Timeout.Duration = defaultForgejoTimeout
 	}
 	for index := range c.Pools {
+		if c.Pools[index].Instance.RunnerInstall == "" {
+			c.Pools[index].Instance.RunnerInstall = RunnerInstallController
+		}
+
 		scaling := &c.Pools[index].Scaling
 		if scaling.MaxProvisioning == 0 {
 			scaling.MaxProvisioning = defaultMaxProvisioning
@@ -296,19 +308,13 @@ func (c Config) Validate() error {
 	if c.Incus.Project == "" {
 		return errors.New("incus.project is required")
 	}
-	if err := validSecureURL("runner.download_url", c.Runner.DownloadURL); err != nil {
-		return err
-	}
-	checksum, err := hex.DecodeString(c.Runner.SHA256)
-	if err != nil || len(checksum) != sha256Length/2 {
-		return errors.New("runner.sha256 must be a SHA-256 hex digest")
-	}
 	if len(c.Pools) == 0 {
 		return errors.New("at least one pool is required")
 	}
 
 	names := make(map[string]struct{}, len(c.Pools))
 	labels := make(map[string]string, len(c.Pools))
+	needsRunner := false
 	for i, pool := range c.Pools {
 		if err := pool.validate(); err != nil {
 			return fmt.Errorf("pool %d: %w", i, err)
@@ -323,6 +329,15 @@ func (c Config) Validate() error {
 			return fmt.Errorf("pool %q: primary label %q is also used by pool %q", pool.Name, primary, owner)
 		}
 		labels[primary] = pool.Name
+		if pool.Instance.RunnerInstall == RunnerInstallController {
+			needsRunner = true
+		}
+	}
+
+	if needsRunner || c.Runner.DownloadURL != "" || c.Runner.SHA256 != "" {
+		if err := c.Runner.validate(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -338,6 +353,17 @@ func (l Logging) validate() error {
 	case "", LogFormatJSON, LogFormatText:
 	default:
 		return errors.New("logging.format must be json or text")
+	}
+	return nil
+}
+
+func (r Runner) validate() error {
+	if err := validSecureURL("runner.download_url", r.DownloadURL); err != nil {
+		return err
+	}
+	checksum, err := hex.DecodeString(r.SHA256)
+	if err != nil || len(checksum) != sha256Length/2 {
+		return errors.New("runner.sha256 must be a SHA-256 hex digest")
 	}
 	return nil
 }
@@ -405,6 +431,11 @@ func (p Pool) validate() error {
 			return fmt.Errorf("duplicate label %q", label)
 		}
 		seenLabels[label] = struct{}{}
+	}
+	switch p.Instance.RunnerInstall {
+	case RunnerInstallController, RunnerInstallImage:
+	default:
+		return errors.New("instance.runner_installation must be controller or image")
 	}
 	if p.Instance.Image.Alias == "" && p.Instance.Image.Fingerprint == "" {
 		return errors.New("instance.image is required")

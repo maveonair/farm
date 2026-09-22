@@ -63,13 +63,13 @@ sections describe every available setting.
 
 ## Controller
 
-| Field | Meaning |
-| --- | --- |
-| `id` | Lowercase controller identity used to mark owned VMs and runners. Keep it stable. |
-| `database` | SQLite path used to track runner and VM lifecycle state. |
-| `reconcile_interval` | Interval between reconciliation cycles. Defaults to `5s`. |
-| `cleanup_timeout` | Cleanup and shutdown deadline. Defaults to `2m`. |
-| `listen` | Address serving the UI, API, health checks, and metrics. Defaults to `127.0.0.1:8080`. |
+| Field                | Meaning                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `id`                 | Lowercase controller identity used to mark owned VMs and runners. Keep it stable.      |
+| `database`           | SQLite path used to track runner and VM lifecycle state.                               |
+| `reconcile_interval` | Interval between reconciliation cycles. Defaults to `5s`.                              |
+| `cleanup_timeout`    | Cleanup and shutdown deadline. Defaults to `2m`.                                       |
+| `listen`             | Address serving the UI, API, health checks, and metrics. Defaults to `127.0.0.1:8080`. |
 
 Use each database and controller ID with only one FARM process.
 
@@ -90,12 +90,12 @@ not logged.
 
 ## Forgejo
 
-| Field | Meaning |
-| --- | --- |
-| `url` | Absolute HTTPS URL of the Forgejo server. |
-| `token_file` | File containing the API token. Surrounding whitespace is removed. |
-| `ca_certificate_file` | Optional PEM CA certificate appended to the system trust store. |
-| `timeout` | Timeout for each Forgejo API request. Defaults to `15s`. |
+| Field                 | Meaning                                                           |
+| --------------------- | ----------------------------------------------------------------- |
+| `url`                 | Absolute HTTPS URL of the Forgejo server.                         |
+| `token_file`          | File containing the API token. Surrounding whitespace is removed. |
+| `ca_certificate_file` | Optional PEM CA certificate appended to the system trust store.   |
+| `timeout`             | Timeout for each Forgejo API request. Defaults to `15s`.          |
 
 Repository and organization pools require Actions administration access for
 their scope. User pools use the user owning the token. Global pools require a
@@ -130,13 +130,16 @@ Incus server certificate.
 
 ## Runner
 
-| Field | Meaning |
-| --- | --- |
-| `download_url` | Absolute HTTPS URL of the Forgejo Runner binary. |
-| `sha256` | Lowercase or uppercase 64-character SHA-256 hex digest. |
+| Field          | Meaning                                                 |
+| -------------- | ------------------------------------------------------- |
+| `download_url` | Absolute HTTPS URL of the Forgejo Runner binary.        |
+| `sha256`       | Lowercase or uppercase 64-character SHA-256 hex digest. |
 
-FARM downloads and verifies the binary during cloud-init. Each runner starts
-in `one-job` mode and waits for one matching job.
+These fields are required when any pool uses `runner_installation: controller`.
+They may be omitted when every pool uses `runner_installation: image`. If either
+field is present, both are validated.
+
+Each runner starts in `one-job` mode and waits for one matching job.
 
 ## Pools
 
@@ -221,6 +224,39 @@ An image may use `fingerprint` instead of `alias`. A private image server may
 set `certificate_file`. Incus CLI remote names such as `images:` are not
 accepted because they exist only in client configuration.
 
+### Runner installation
+
+By default, FARM installs the runner and its dependencies through cloud-init:
+
+```yaml
+instance:
+  image: farm-debian-13
+  runner_installation: controller
+```
+
+An image can provide the runner instead:
+
+```yaml
+instance:
+  image: farm-nixos-current
+  runner_installation: image
+```
+
+Image installation does not inject FARM cloud-init. FARM waits for the Incus
+agent, writes `/etc/farm/runner.yml`, and restarts
+`forgejo-runner.service`. The image must provide:
+
+- systemd and a working Incus agent
+- the `runner` user and group
+- a writable `/etc/farm` owned by `runner:runner` with mode `0700`
+- `forgejo-runner.service`, the runner binary, and its dependencies
+- no baked `/etc/farm/runner.yml`
+
+The service must run the runner with
+`-c /etc/farm/runner.yml one-job --wait`. It should use
+`ConditionPathExists=/etc/farm/runner.yml` and must not start at boot. FARM
+owns runtime configuration and service activation in both modes.
+
 ### Profiles and instance config
 
 ```yaml
@@ -236,14 +272,14 @@ trusted configuration; review their devices carefully.
 
 ### Scaling
 
-| Field | Meaning |
-| --- | --- |
-| `min_idle` | Number of ready VMs kept available when no jobs wait. Defaults to `0`. |
-| `max_instances` | Maximum non-finished VMs, including running and cleaning VMs. |
-| `max_provisioning` | Maximum concurrent VM startups. Defaults to `2`. |
-| `startup_timeout` | Registration and startup deadline. Defaults to `10m`. |
-| `idle_timeout` | Excess ready VM idle time. Defaults to `5m`. |
-| `max_lifetime` | Running instance lifetime. Defaults to `6h`. |
+| Field              | Meaning                                                                |
+| ------------------ | ---------------------------------------------------------------------- |
+| `min_idle`         | Number of ready VMs kept available when no jobs wait. Defaults to `0`. |
+| `max_instances`    | Maximum non-finished VMs, including running and cleaning VMs.          |
+| `max_provisioning` | Maximum concurrent VM startups. Defaults to `2`.                       |
+| `startup_timeout`  | Registration and startup deadline. Defaults to `10m`.                  |
+| `idle_timeout`     | Excess ready VM idle time. Defaults to `5m`.                           |
+| `max_lifetime`     | Running instance lifetime. Defaults to `6h`.                           |
 
 FARM targets enough ready or bootstrapping capacity for waiting jobs plus
 `min_idle`. `max_instances` caps total pool size; `max_provisioning` caps

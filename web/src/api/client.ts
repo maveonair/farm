@@ -16,6 +16,7 @@ export type Stage =
   | 'scale_down'
   | 'register_runner'
   | 'create_instance'
+  | 'wait_agent'
   | 'wait_cloud_init'
   | 'push_runner_config'
   | 'wait_runner'

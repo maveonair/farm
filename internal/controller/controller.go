@@ -40,6 +40,7 @@ type forge interface {
 type instances interface {
 	Create(context.Context, incusvm.InstanceSpec) error
 	Managed(context.Context, string, string) ([]incusvm.ManagedInstance, error)
+	WaitAgent(context.Context, string) error
 	WaitCloudInit(context.Context, string) error
 	PushRunnerConfig(context.Context, string, []byte) error
 	Delete(context.Context, string) error
