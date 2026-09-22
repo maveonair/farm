@@ -78,9 +78,17 @@ type poolResponse struct {
 	IdleTimeout      string              `json:"idle_timeout"`
 	MaxLifetime      string              `json:"max_lifetime"`
 	Capacity         capacityResponse    `json:"capacity"`
+	Bootstrap        bootstrapResponse   `json:"bootstrap"`
 	Runtime          poolRuntimeResponse `json:"runtime"`
 	Incident         *incidentResponse   `json:"incident,omitempty"`
 	ObservationStale bool                `json:"observation_stale"`
+}
+
+type bootstrapResponse struct {
+	Attempts     int    `json:"attempts"`
+	AttemptLimit int    `json:"attempt_limit"`
+	Paused       bool   `json:"paused"`
+	RetryAt      string `json:"retry_at,omitempty"`
 }
 
 type scopeResponse struct {
@@ -417,6 +425,13 @@ func newPoolResponse(pool config.Pool, data store.PoolData, staleAfter time.Dura
 			FinishedAt: formatTime(data.Runtime.ReconcileFinishedAt), LastSuccessAt: formatTime(data.Runtime.LastSuccessAt),
 			Stage: data.Runtime.Stage, StageStartedAt: formatTime(data.Runtime.StageStartedAt),
 			StageDeadlineAt: formatTime(data.Runtime.StageDeadlineAt),
+		},
+		Bootstrap: bootstrapResponse{
+			Attempts:     data.Runtime.Bootstrap.Attempts,
+			AttemptLimit: pool.Scaling.BootstrapAttemptLimit,
+			Paused: data.Runtime.Bootstrap.Attempts >= pool.Scaling.BootstrapAttemptLimit &&
+				!data.Runtime.Bootstrap.RetryAt.IsZero() && time.Now().Before(data.Runtime.Bootstrap.RetryAt),
+			RetryAt: formatTime(data.Runtime.Bootstrap.RetryAt),
 		},
 		ObservationStale: !data.Runtime.ObservedAt.IsZero() && time.Since(data.Runtime.ObservedAt) > staleAfter,
 	}

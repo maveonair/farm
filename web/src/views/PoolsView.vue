@@ -36,6 +36,11 @@ const error = computed(() =>
             </div>
             <div class="flex items-center gap-2">
               <span
+                v-if="pool.bootstrap.paused"
+                class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700"
+                >Provisioning paused</span
+              >
+              <span
                 v-if="pool.runtime.state"
                 class="rounded-full px-2 py-1 text-xs capitalize"
                 :class="

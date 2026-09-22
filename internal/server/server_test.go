@@ -134,6 +134,34 @@ func TestPoolAPIUsesLiveCounts(t *testing.T) {
 	}
 }
 
+func TestPoolAPIReportsBootstrapPause(t *testing.T) {
+	retryAt := time.Now().Add(time.Hour)
+	server := New("", &Monitor{}, Options{
+		Pools: []config.Pool{{Name: "ubuntu", Scaling: config.Scaling{BootstrapAttemptLimit: 5}}},
+		Store: &fakeReader{pools: []store.PoolData{{
+			Pool: "ubuntu", Runtime: store.PoolRuntime{
+				Bootstrap: store.BootstrapState{Attempts: 5, RetryAt: retryAt},
+			},
+		}}},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/pools/ubuntu", nil)
+	response := httptest.NewRecorder()
+	server.http.Handler.ServeHTTP(response, request)
+	var body struct {
+		Bootstrap struct {
+			Attempts int  `json:"attempts"`
+			Paused   bool `json:"paused"`
+		} `json:"bootstrap"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Bootstrap.Attempts != 5 || !body.Bootstrap.Paused {
+		t.Fatalf("bootstrap = %#v", body.Bootstrap)
+	}
+}
+
 func TestEventsAPIIncludesInstanceName(t *testing.T) {
 	server := New("", &Monitor{}, Options{
 		Store: &fakeReader{events: []store.Event{{

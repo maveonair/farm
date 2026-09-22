@@ -107,6 +107,32 @@ type PoolRuntime struct {
 	Stage               reconcile.Stage
 	StageStartedAt      time.Time
 	StageDeadlineAt     time.Time
+	Bootstrap           BootstrapState
+}
+
+// Bootstrap state transitions:
+//
+//	below limit          normal provisioning
+//	at limit, retry due one probe
+//	at limit, retry future paused
+//	success              reset
+type BootstrapState struct {
+	Attempts int
+	RetryAt  time.Time
+}
+
+type BootstrapRequest struct {
+	Pool    string
+	Wanted  int
+	Limit   int
+	Now     time.Time
+	RetryAt time.Time
+}
+
+type BootstrapReservation struct {
+	Count int
+	Probe bool
+	State BootstrapState
 }
 
 type PoolCounts struct {

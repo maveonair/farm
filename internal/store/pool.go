@@ -42,6 +42,80 @@ func (d *DB) ObservePool(ctx context.Context, observation PoolObservation) error
 	return requireUpdate(result)
 }
 
+func (d *DB) ReserveBootstrap(ctx context.Context, request BootstrapRequest) (BootstrapReservation, error) {
+	if request.Pool == "" || request.Wanted < 1 || request.Limit < 1 {
+		return BootstrapReservation{}, errors.New("pool, wanted attempts, and attempt limit are required")
+	}
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return BootstrapReservation{}, fmt.Errorf("begin bootstrap reservation: %w", err)
+	}
+	defer tx.Rollback()
+
+	var state BootstrapState
+	if err := tx.QueryRowContext(ctx, `
+		SELECT bootstrap_attempts, bootstrap_retry_at FROM pool_runtime WHERE pool = ?
+	`, request.Pool).Scan(&state.Attempts, newNullTime(&state.RetryAt)); err != nil {
+		return BootstrapReservation{}, fmt.Errorf("read bootstrap state: %w", err)
+	}
+
+	reservation := BootstrapReservation{State: state}
+	if state.Attempts >= request.Limit {
+		if !state.RetryAt.IsZero() && request.Now.Before(state.RetryAt) {
+			if err := tx.Commit(); err != nil {
+				return BootstrapReservation{}, fmt.Errorf("commit bootstrap reservation: %w", err)
+			}
+			return reservation, nil
+		}
+		// A missing retry time means FARM stopped during the limiting attempt.
+		if state.RetryAt.IsZero() {
+			reservation.State.RetryAt = request.RetryAt.UTC()
+		} else {
+			reservation.Count = 1
+			reservation.Probe = true
+			reservation.State.RetryAt = request.RetryAt.UTC()
+		}
+	} else {
+		reservation.Count = min(request.Wanted, request.Limit-state.Attempts)
+		reservation.State.Attempts += reservation.Count
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE pool_runtime SET bootstrap_attempts = ?, bootstrap_retry_at = ? WHERE pool = ?
+	`, reservation.State.Attempts, nullTimeValue(reservation.State.RetryAt), request.Pool)
+	if err != nil {
+		return BootstrapReservation{}, fmt.Errorf("reserve bootstrap attempts: %w", err)
+	}
+	if err := requireUpdate(result); err != nil {
+		return BootstrapReservation{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return BootstrapReservation{}, fmt.Errorf("commit bootstrap reservation: %w", err)
+	}
+	return reservation, nil
+}
+
+func (d *DB) HoldBootstrap(ctx context.Context, pool string, retryAt time.Time) error {
+	result, err := d.db.ExecContext(ctx, `
+		UPDATE pool_runtime SET bootstrap_retry_at = ? WHERE pool = ?
+	`, retryAt.UTC(), pool)
+	if err != nil {
+		return fmt.Errorf("hold bootstrap attempts: %w", err)
+	}
+	return requireUpdate(result)
+}
+
+func (d *DB) ResetBootstrap(ctx context.Context, pool string) error {
+	result, err := d.db.ExecContext(ctx, `
+		UPDATE pool_runtime SET bootstrap_attempts = 0, bootstrap_retry_at = NULL WHERE pool = ?
+	`, pool)
+	if err != nil {
+		return fmt.Errorf("reset bootstrap attempts: %w", err)
+	}
+	return requireUpdate(result)
+}
+
 func (d *DB) ProgressPool(ctx context.Context, progress PoolProgress) error {
 	result, err := d.db.ExecContext(ctx, `
 		UPDATE pool_runtime SET current_stage = ?, stage_started_at = ?, stage_deadline_at = ?
@@ -206,6 +280,7 @@ func (d *DB) ListPoolData(ctx context.Context) ([]PoolData, error) {
 		SELECT p.pool, COALESCE(r.run_id, ''), COALESCE(r.reconcile_state, ''), COALESCE(r.waiting_jobs, 0),
 			r.observed_at, r.reconcile_started_at, r.reconcile_finished_at, r.last_success_at,
 			COALESCE(r.current_stage, ''), r.stage_started_at, r.stage_deadline_at,
+			COALESCE(r.bootstrap_attempts, 0), r.bootstrap_retry_at,
 			COALESCE(c.bootstrapping, 0), COALESCE(c.ready, 0),
 			COALESCE(c.running, 0), COALESCE(c.cleaning, 0),
 			COALESCE(i.id, 0), COALESCE(i.run_id, ''), COALESCE(i.stage, ''), COALESCE(i.code, ''),
@@ -230,6 +305,7 @@ func (d *DB) ListPoolData(ctx context.Context) ([]PoolData, error) {
 			newNullTime(&data.Runtime.ObservedAt), newNullTime(&data.Runtime.ReconcileStartedAt),
 			newNullTime(&data.Runtime.ReconcileFinishedAt), newNullTime(&data.Runtime.LastSuccessAt),
 			&data.Runtime.Stage, newNullTime(&data.Runtime.StageStartedAt), newNullTime(&data.Runtime.StageDeadlineAt),
+			&data.Runtime.Bootstrap.Attempts, newNullTime(&data.Runtime.Bootstrap.RetryAt),
 			&data.Counts.Bootstrapping, &data.Counts.Ready, &data.Counts.Running, &data.Counts.Cleaning,
 			&incident.ID, &incident.RunID, &incident.Stage, &incident.Code, &incident.Message,
 			&incident.InstanceID, &incident.InstanceName, newNullTime(&incident.FirstSeenAt),

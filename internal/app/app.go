@@ -142,6 +142,7 @@ func Run(ctx context.Context, path string) (runErr error) {
 					"stage", failure.Stage,
 					"code", failure.Code,
 					"instance_id", failure.InstanceID,
+					"instance_name", failure.InstanceName,
 					"duration", result.duration,
 					"error", result.err,
 				)

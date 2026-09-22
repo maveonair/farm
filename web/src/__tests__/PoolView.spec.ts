@@ -27,6 +27,12 @@ const pool: Pool = {
     cleaning: 0,
     maximum: 4,
   },
+  bootstrap: {
+    attempts: 5,
+    attempt_limit: 5,
+    paused: true,
+    retry_at: '2026-09-21T11:00:00Z',
+  },
   runtime: {},
   observation_stale: false,
 }
@@ -75,6 +81,7 @@ describe('PoolView', () => {
     expect(configuration?.text()).toContain('Labels')
     expect(configuration?.text()).toContain('ubuntu-24.04')
     expect(configuration?.text()).toContain('x64')
+    expect(wrapper.text()).toContain('Provisioning paused')
     expect(getInstances.mock.calls[0]?.[0]?.get('per_page')).toBe('10')
     expect(wrapper.text()).not.toContain('No instances recorded.')
     wrapper.unmount()
