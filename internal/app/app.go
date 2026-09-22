@@ -27,7 +27,7 @@ func Validate(path string) error {
 	return err
 }
 
-func Run(ctx context.Context, path string) (runErr error) {
+func Run(ctx context.Context, path, version string) (runErr error) {
 	cfg, err := config.Load(path)
 	if err != nil {
 		return err
@@ -96,6 +96,7 @@ func Run(ctx context.Context, path string) (runErr error) {
 		monitor,
 		server.Options{
 			Controller:        cfg.Controller.ID,
+			Version:           version,
 			ReconcileInterval: cfg.Controller.ReconcileInterval.Duration,
 			Pools:             cfg.Pools,
 			Store:             repository,

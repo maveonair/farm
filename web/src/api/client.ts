@@ -27,6 +27,7 @@ export type Stage =
 
 export interface Summary {
   controller: string
+  version: string
   healthy: boolean
   last_success_at: string
   reconcile_errors: number

@@ -27,6 +27,7 @@ type reader interface {
 
 type Options struct {
 	Controller        string
+	Version           string
 	ReconcileInterval time.Duration
 	Pools             []config.Pool
 	Store             reader
@@ -190,6 +191,7 @@ func (s *Server) summary(options Options) http.HandlerFunc {
 		healthy := snapshot.Condition == reconcile.ConditionStarting || snapshot.Condition == reconcile.ConditionHealthy
 		writeJSON(w, http.StatusOK, map[string]any{
 			"controller":       options.Controller,
+			"version":          options.Version,
 			"healthy":          healthy,
 			"last_success_at":  formatTime(snapshot.LastSuccessAt),
 			"reconcile_errors": snapshot.Errors,
