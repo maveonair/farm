@@ -81,6 +81,7 @@ func TestSummaryAPI(t *testing.T) {
 	monitor.Success(time.Now())
 	server := New("", monitor, Options{
 		Controller: "primary",
+		Version:    "0.3.0",
 		Pools:      []config.Pool{{Name: "ubuntu"}},
 		Store: &fakeReader{pools: []store.PoolData{{
 			Pool: "ubuntu", Runtime: store.PoolRuntime{Waiting: 2},
@@ -96,13 +97,14 @@ func TestSummaryAPI(t *testing.T) {
 	}
 	var body struct {
 		Controller string         `json:"controller"`
+		Version    string         `json:"version"`
 		Waiting    int            `json:"waiting"`
 		Counts     map[string]int `json:"counts"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Controller != "primary" || body.Waiting != 2 || body.Counts["running"] != 1 {
+	if body.Controller != "primary" || body.Version != "0.3.0" || body.Waiting != 2 || body.Counts["running"] != 1 {
 		t.Fatalf("body = %#v", body)
 	}
 }

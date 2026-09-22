@@ -87,5 +87,5 @@ func runDaemon(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	return app.Run(ctx, *path)
+	return app.Run(ctx, *path, version)
 }

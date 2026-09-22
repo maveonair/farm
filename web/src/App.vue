@@ -12,10 +12,10 @@ const statusText = computed(() => {
     return 'Disconnected'
   }
   if (summaryQuery.isRefetchError.value) {
-    return `${summary.value.controller} · stale`
+    return `${summary.value.controller} · ${summary.value.version} · stale`
   }
 
-  return summary.value.controller
+  return `${summary.value.controller} · ${summary.value.version}`
 })
 
 function isSection(path: string) {
@@ -78,9 +78,10 @@ function statusColor() {
             </span>
           </RouterLink>
         </nav>
-        <div class="ml-auto hidden shrink-0 items-center gap-2 text-xs sm:flex">
+        <div class="ml-auto flex shrink-0 items-center gap-2 text-xs">
           <span class="size-2 rounded-full" :class="statusColor()" />
-          <span class="text-slate-300">{{ statusText }}</span>
+          <span class="hidden text-slate-300 sm:inline">{{ statusText }}</span>
+          <span class="text-slate-300 sm:hidden">{{ summary?.version ?? 'Disconnected' }}</span>
         </div>
       </div>
     </header>

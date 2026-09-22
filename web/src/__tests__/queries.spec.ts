@@ -12,6 +12,7 @@ import { newTestQueryClient, page } from './query'
 
 const summary: Summary = {
   controller: 'farm',
+  version: 'dev',
   healthy: true,
   last_success_at: '',
   reconcile_errors: 0,
