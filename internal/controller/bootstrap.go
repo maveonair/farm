@@ -9,7 +9,7 @@ import (
 	"github.com/maveonair/farm/internal/bootstrap"
 	"github.com/maveonair/farm/internal/config"
 	"github.com/maveonair/farm/internal/forgejo"
-	incusvm "github.com/maveonair/farm/internal/incus"
+	"github.com/maveonair/farm/internal/incus"
 	farmInstance "github.com/maveonair/farm/internal/instance"
 	"github.com/maveonair/farm/internal/reconcile"
 )
@@ -44,11 +44,11 @@ func (c *Controller) provision(ctx context.Context, pool config.Pool, scope forg
 	}
 	registration, err := c.forge.Register(workCtx, scope, name, runnerDescription(c.id, pool.Name))
 	if err != nil {
-		return c.fail(ctx, instance, scope, forgejo.Registration{}, false,
+		return c.fail(ctx, instance, scope, forgejo.Registration{}, failOptions{},
 			operationError(reconcile.StageRegisterRunner, classify(err), instance, err))
 	}
 	if err := c.store.SetRegistration(workCtx, id, registration.ID); err != nil {
-		return c.fail(ctx, instance, scope, registration, false,
+		return c.fail(ctx, instance, scope, registration, failOptions{},
 			operationError(reconcile.StagePersistState, reconcile.FailureDatabase, instance, err))
 	}
 	c.logger.DebugContext(
@@ -64,23 +64,23 @@ func (c *Controller) provision(ctx context.Context, pool config.Pool, scope forg
 	if pool.Instance.RunnerInstall != config.RunnerInstallImage {
 		cloudInit, err = bootstrap.CloudInit(c.install)
 		if err != nil {
-			return c.fail(ctx, instance, scope, registration, false,
+			return c.fail(ctx, instance, scope, registration, failOptions{},
 				operationError(reconcile.StagePushRunnerConfig, reconcile.FailureUnknown, instance, err))
 		}
 	}
 	instanceCreated := false
 	if err := c.setProgress(workCtx, pool.Name, runID, reconcile.StateCreateInstance, deadline); err != nil {
-		return c.fail(ctx, instance, scope, registration, false, err)
+		return c.fail(ctx, instance, scope, registration, failOptions{}, err)
 	}
 	if err := c.setInstanceStage(workCtx, instance, reconcile.StateCreateInstance); err != nil {
-		return c.fail(ctx, instance, scope, registration, false, err)
+		return c.fail(ctx, instance, scope, registration, failOptions{}, err)
 	}
-	err = c.instances.Create(workCtx, incusvm.InstanceSpec{
+	err = c.instances.Create(workCtx, incus.InstanceSpec{
 		ID:         id,
 		Name:       name,
 		Pool:       pool.Name,
 		Controller: c.id,
-		Image: incusvm.Image{
+		Image: incus.Image{
 			Alias:           pool.Instance.Image.Alias,
 			Fingerprint:     pool.Instance.Image.Fingerprint,
 			Server:          pool.Instance.Image.Server,
@@ -92,7 +92,7 @@ func (c *Controller) provision(ctx context.Context, pool config.Pool, scope forg
 		CloudInit: cloudInit,
 	})
 	if err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated,
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated},
 			operationError(reconcile.StateCreateInstance, classify(err), instance, err))
 	}
 	instanceCreated = true
@@ -108,13 +108,13 @@ func (c *Controller) provision(ctx context.Context, pool config.Pool, scope forg
 		waitStage = reconcile.StageWaitAgent
 	}
 	if err := c.setProgress(workCtx, pool.Name, runID, waitStage, deadline); err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated, err)
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated}, err)
 	}
 	if err := c.setInstanceStage(workCtx, instance, waitStage); err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated, err)
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated}, err)
 	}
 	if err := c.waitInstance(workCtx, pool.Instance.RunnerInstall, name); err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated,
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated},
 			operationError(waitStage, classify(err), instance, err))
 	}
 
@@ -125,25 +125,25 @@ func (c *Controller) provision(ctx context.Context, pool config.Pool, scope forg
 		Labels: runnerLabels(pool.Labels),
 	})
 	if err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated,
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated},
 			operationError(reconcile.StagePushRunnerConfig, reconcile.FailureUnknown, instance, err))
 	}
 	if err := c.setProgress(workCtx, pool.Name, runID, reconcile.StagePushRunnerConfig, deadline); err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated, err)
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated}, err)
 	}
 	if err := c.setInstanceStage(workCtx, instance, reconcile.StagePushRunnerConfig); err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated, err)
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated}, err)
 	}
 	if err := c.instances.PushRunnerConfig(workCtx, name, runnerConfig); err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated,
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated},
 			operationError(reconcile.StagePushRunnerConfig, classify(err), instance, err))
 	}
 
 	if err := c.setProgress(workCtx, pool.Name, runID, reconcile.StageWaitRunner, deadline); err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated, err)
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated}, err)
 	}
 	if err := c.setInstanceStage(workCtx, instance, reconcile.StageWaitRunner); err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated, err)
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated}, err)
 	}
 	state, err := c.waitRunner(workCtx, scope, registration.ID)
 	if forgejo.IsNotFound(err) {
@@ -151,11 +151,11 @@ func (c *Controller) provision(ctx context.Context, pool config.Pool, scope forg
 		return c.cleanup(ctx, instance, scope, farmInstance.ResultSucceeded, farmInstance.ReasonJobCompleted, "")
 	}
 	if err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated,
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated},
 			operationError(reconcile.StageWaitRunner, classify(err), instance, err))
 	}
 	if err := c.markState(workCtx, id, state); err != nil {
-		return c.fail(ctx, instance, scope, registration, instanceCreated,
+		return c.fail(ctx, instance, scope, registration, failOptions{deleteInstance: instanceCreated},
 			operationError(reconcile.StagePersistState, reconcile.FailureDatabase, instance, err))
 	}
 	c.logger.InfoContext(
@@ -205,7 +205,11 @@ func (c *Controller) waitRunner(ctx context.Context, scope forgejo.Scope, id int
 	}
 }
 
-func (c *Controller) fail(ctx context.Context, instance farmInstance.Instance, scope forgejo.Scope, registration forgejo.Registration, instanceCreated bool, cause error) error {
+type failOptions struct {
+	deleteInstance bool
+}
+
+func (c *Controller) fail(ctx context.Context, instance farmInstance.Instance, scope forgejo.Scope, registration forgejo.Registration, options failOptions, cause error) error {
 	cleanupCtx, cancel := c.cleanupContext(context.WithoutCancel(ctx))
 	defer cancel()
 
@@ -218,7 +222,7 @@ func (c *Controller) fail(ctx context.Context, instance farmInstance.Instance, s
 			cleanup = append(cleanup, err)
 		}
 	}
-	if instanceCreated {
+	if options.deleteInstance {
 		if err := c.instances.Delete(cleanupCtx, instance.Name); err != nil {
 			cleanup = append(cleanup, err)
 		}

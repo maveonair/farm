@@ -96,7 +96,7 @@ func TestRetryPreservesFailure(t *testing.T) {
 	if err := db.BeginCleanup(ctx, "id", farmInstance.ResultFailed, farmInstance.ReasonBootstrapFailed, "cloud-init failed"); err != nil {
 		t.Fatalf("BeginCleanup() error = %v", err)
 	}
-	if err := db.Retry(ctx, "id", "delete VM failed", time.Now()); err != nil {
+	if err := db.Retry(ctx, "id", "delete instance failed", time.Now()); err != nil {
 		t.Fatalf("Retry() error = %v", err)
 	}
 
@@ -104,7 +104,7 @@ func TestRetryPreservesFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	if !strings.Contains(record.Error, "cloud-init failed") || !strings.Contains(record.Error, "delete VM failed") {
+	if !strings.Contains(record.Error, "cloud-init failed") || !strings.Contains(record.Error, "delete instance failed") {
 		t.Fatalf("error = %q", record.Error)
 	}
 }

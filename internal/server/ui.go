@@ -3,6 +3,7 @@ package server
 import (
 	"embed"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"path"
 	"strings"
@@ -13,7 +14,7 @@ import (
 //go:embed dist/*
 var uiFiles embed.FS
 
-func uiHandler() http.Handler {
+func uiHandler(logger *slog.Logger) http.Handler {
 	root, err := fs.Sub(uiFiles, "dist/web")
 	if err != nil {
 		return http.NotFoundHandler()
@@ -39,7 +40,9 @@ func uiHandler() http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(index)
+		if _, err := w.Write(index); err != nil {
+			logger.DebugContext(r.Context(), "write UI response", "error", err)
+		}
 	})
 }
 

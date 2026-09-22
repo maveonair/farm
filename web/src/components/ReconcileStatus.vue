@@ -38,8 +38,8 @@ function title() {
     <p class="font-semibold">{{ title() }}</p>
     <p class="mt-1">
       <template v-if="reconciliation.phase === 'running'">
-        Started {{ relative(reconciliation.started_at) }} · {{ reconciliation.completed_pools }} of
-        {{ reconciliation.total_pools }} pools completed
+        Started {{ relative(reconciliation.started_at) }} · {{ reconciliation.active_pools }} active
+        pool<span v-if="reconciliation.active_pools !== 1">s</span>
         <span v-if="reconciliation.condition === 'degraded'"> · retry in progress</span>
       </template>
       <template v-else-if="reconciliation.condition === 'degraded'">

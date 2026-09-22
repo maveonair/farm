@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -184,10 +185,24 @@ func Open(ctx context.Context, path string) (*DB, error) {
 
 	store := &DB{db: db}
 	if err := store.initialize(ctx); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("close database after initialization: %w", closeErr))
+		}
 		return nil, err
 	}
 	return store, nil
+}
+
+// rollback releases a transaction after an early return. After Commit it is a
+// harmless no-op, and the operation or Commit error remains authoritative.
+func rollback(tx *sql.Tx) {
+	_ = tx.Rollback()
+}
+
+// releaseRows closes rows on early returns. Rows.Err reports errors encountered
+// during normal iteration and automatic closure.
+func releaseRows(rows *sql.Rows) {
+	_ = rows.Close()
 }
 
 func (d *DB) Close() error {

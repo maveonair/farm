@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -31,6 +32,7 @@ type Options struct {
 	ReconcileInterval time.Duration
 	Pools             []config.Pool
 	Store             reader
+	Logger            *slog.Logger
 }
 
 type instanceResponse struct {
@@ -138,12 +140,11 @@ type incidentResponse struct {
 type reconciliationResponse struct {
 	Phase          reconcile.Phase     `json:"phase"`
 	Condition      reconcile.Condition `json:"condition"`
-	LastOutcome    reconcile.Outcome   `json:"last_outcome"`
 	StartedAt      string              `json:"started_at,omitempty"`
 	FinishedAt     string              `json:"finished_at,omitempty"`
 	LastSuccessAt  string              `json:"last_success_at,omitempty"`
 	DeadlineAt     string              `json:"deadline_at,omitempty"`
-	CompletedPools int                 `json:"completed_pools"`
+	ActivePools    int                 `json:"active_pools"`
 	TotalPools     int                 `json:"total_pools"`
 	ActiveFailures int                 `json:"active_failures"`
 }
@@ -168,7 +169,7 @@ func (s *Server) summary(options Options) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		pools, err := options.Store.ListPoolData(r.Context())
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "read summary")
+			s.writeError(r.Context(), w, http.StatusInternalServerError, "read summary")
 			return
 		}
 
@@ -189,17 +190,17 @@ func (s *Server) summary(options Options) http.HandlerFunc {
 		now := time.Now()
 		snapshot := s.monitor.Snapshot(now)
 		healthy := snapshot.Condition == reconcile.ConditionStarting || snapshot.Condition == reconcile.ConditionHealthy
-		writeJSON(w, http.StatusOK, map[string]any{
+		s.writeJSON(r.Context(), w, http.StatusOK, map[string]any{
 			"controller":       options.Controller,
 			"version":          options.Version,
 			"healthy":          healthy,
 			"last_success_at":  formatTime(snapshot.LastSuccessAt),
 			"reconcile_errors": snapshot.Errors,
 			"reconciliation": reconciliationResponse{
-				Phase: snapshot.Phase, Condition: snapshot.Condition, LastOutcome: snapshot.LastOutcome,
+				Phase: snapshot.Phase, Condition: snapshot.Condition,
 				StartedAt: formatTime(snapshot.StartedAt), FinishedAt: formatTime(snapshot.FinishedAt),
 				LastSuccessAt: formatTime(snapshot.LastSuccessAt), DeadlineAt: formatTime(snapshot.DeadlineAt),
-				CompletedPools: snapshot.CompletedPools, TotalPools: snapshot.TotalPools,
+				ActivePools: snapshot.ActivePools, TotalPools: snapshot.TotalPools,
 				ActiveFailures: snapshot.ActiveFailures,
 			},
 			"waiting":      waiting,
@@ -213,7 +214,7 @@ func (s *Server) pools(options Options) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := options.Store.ListPoolData(r.Context())
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "read pools")
+			s.writeError(r.Context(), w, http.StatusInternalServerError, "read pools")
 			return
 		}
 		byName := make(map[string]store.PoolData, len(data))
@@ -225,7 +226,7 @@ func (s *Server) pools(options Options) http.HandlerFunc {
 		for _, pool := range options.Pools {
 			pools = append(pools, newPoolResponse(pool, byName[pool.Name], staleAfter(options.ReconcileInterval)))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"pools": pools})
+		s.writeJSON(r.Context(), w, http.StatusOK, map[string]any{"pools": pools})
 	}
 }
 
@@ -238,7 +239,7 @@ func (s *Server) pool(options Options) http.HandlerFunc {
 			}
 			pools, err := options.Store.ListPoolData(r.Context())
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "read pool")
+				s.writeError(r.Context(), w, http.StatusInternalServerError, "read pool")
 				return
 			}
 			var data store.PoolData
@@ -248,10 +249,10 @@ func (s *Server) pool(options Options) http.HandlerFunc {
 					break
 				}
 			}
-			writeJSON(w, http.StatusOK, newPoolResponse(pool, data, staleAfter(options.ReconcileInterval)))
+			s.writeJSON(r.Context(), w, http.StatusOK, newPoolResponse(pool, data, staleAfter(options.ReconcileInterval)))
 			return
 		}
-		writeError(w, http.StatusNotFound, "pool not found")
+		s.writeError(r.Context(), w, http.StatusNotFound, "pool not found")
 	}
 }
 
@@ -259,19 +260,19 @@ func (s *Server) instances(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, err := parsePage(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			s.writeError(r.Context(), w, http.StatusBadRequest, err.Error())
 			return
 		}
 		state := instance.State(r.URL.Query().Get("state"))
 		if state != "" && !validState(state) {
-			writeError(w, http.StatusBadRequest, "invalid state")
+			s.writeError(r.Context(), w, http.StatusBadRequest, "invalid state")
 			return
 		}
 		instances, err := repository.ListInstances(r.Context(), store.InstanceFilter{
 			Pool: r.URL.Query().Get("pool"), State: state, Limit: page.limit(), Offset: page.offset,
 		})
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "read instances")
+			s.writeError(r.Context(), w, http.StatusInternalServerError, "read instances")
 			return
 		}
 		instances, pagination := finishPage(instances, page)
@@ -279,7 +280,7 @@ func (s *Server) instances(repository reader) http.HandlerFunc {
 		for _, instance := range instances {
 			responses = append(responses, newInstanceResponse(instance))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		s.writeJSON(r.Context(), w, http.StatusOK, map[string]any{
 			"instances":  responses,
 			"pagination": pagination,
 		})
@@ -290,26 +291,26 @@ func (s *Server) instance(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		instance, err := repository.Get(r.Context(), r.PathValue("id"))
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "instance not found")
+			s.writeError(r.Context(), w, http.StatusNotFound, "instance not found")
 			return
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "read instance")
+			s.writeError(r.Context(), w, http.StatusInternalServerError, "read instance")
 			return
 		}
-		writeJSON(w, http.StatusOK, newInstanceResponse(instance))
+		s.writeJSON(r.Context(), w, http.StatusOK, newInstanceResponse(instance))
 	}
 }
 
 func (s *Server) events(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeEvents(w, r, repository, store.EventFilter{Pool: r.URL.Query().Get("pool")})
+		s.writeEvents(w, r, repository, store.EventFilter{Pool: r.URL.Query().Get("pool")})
 	}
 }
 
 func (s *Server) instanceEvents(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeEvents(w, r, repository, store.EventFilter{InstanceID: r.PathValue("id")})
+		s.writeEvents(w, r, repository, store.EventFilter{InstanceID: r.PathValue("id")})
 	}
 }
 
@@ -317,7 +318,7 @@ func (s *Server) incidents(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, err := parsePage(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			s.writeError(r.Context(), w, http.StatusBadRequest, err.Error())
 			return
 		}
 		var open *bool
@@ -331,14 +332,14 @@ func (s *Server) incidents(repository reader) http.HandlerFunc {
 			value := false
 			open = &value
 		default:
-			writeError(w, http.StatusBadRequest, "invalid incident status")
+			s.writeError(r.Context(), w, http.StatusBadRequest, "invalid incident status")
 			return
 		}
 		incidents, err := repository.ListIncidents(r.Context(), store.IncidentFilter{
 			Pool: r.URL.Query().Get("pool"), Open: open, Limit: page.limit(), Offset: page.offset,
 		})
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "read incidents")
+			s.writeError(r.Context(), w, http.StatusInternalServerError, "read incidents")
 			return
 		}
 		incidents, pagination := finishPage(incidents, page)
@@ -346,7 +347,7 @@ func (s *Server) incidents(repository reader) http.HandlerFunc {
 		for _, incident := range incidents {
 			responses = append(responses, newIncidentResponse(incident))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		s.writeJSON(r.Context(), w, http.StatusOK, map[string]any{
 			"incidents":  responses,
 			"pagination": pagination,
 		})
@@ -357,33 +358,33 @@ func (s *Server) incident(repository reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil || id <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid incident ID")
+			s.writeError(r.Context(), w, http.StatusBadRequest, "invalid incident ID")
 			return
 		}
 		incident, err := repository.GetIncident(r.Context(), id)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "incident not found")
+			s.writeError(r.Context(), w, http.StatusNotFound, "incident not found")
 			return
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "read incident")
+			s.writeError(r.Context(), w, http.StatusInternalServerError, "read incident")
 			return
 		}
-		writeJSON(w, http.StatusOK, newIncidentResponse(incident))
+		s.writeJSON(r.Context(), w, http.StatusOK, newIncidentResponse(incident))
 	}
 }
 
-func writeEvents(w http.ResponseWriter, r *http.Request, repository reader, filter store.EventFilter) {
+func (s *Server) writeEvents(w http.ResponseWriter, r *http.Request, repository reader, filter store.EventFilter) {
 	page, err := parsePage(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeError(r.Context(), w, http.StatusBadRequest, err.Error())
 		return
 	}
 	filter.Limit = page.limit()
 	filter.Offset = page.offset
 	events, err := repository.ListEvents(r.Context(), filter)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "read events")
+		s.writeError(r.Context(), w, http.StatusInternalServerError, "read events")
 		return
 	}
 	events, pagination := finishPage(events, page)
@@ -397,7 +398,7 @@ func writeEvents(w http.ResponseWriter, r *http.Request, repository reader, filt
 			CreatedAt: event.CreatedAt.UTC().Format(time.RFC3339),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	s.writeJSON(r.Context(), w, http.StatusOK, map[string]any{
 		"events":     responses,
 		"pagination": pagination,
 	})
@@ -507,13 +508,22 @@ func formatTime(value time.Time) string {
 	return value.UTC().Format(time.RFC3339)
 }
 
-func writeJSON(w http.ResponseWriter, status int, value any) {
+func (s *Server) writeJSON(ctx context.Context, w http.ResponseWriter, status int, value any) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "encode HTTP response", "error", err)
+		http.Error(w, "encode response", http.StatusInternalServerError)
+		return
+	}
+	data = append(data, '\n')
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	if _, err := w.Write(data); err != nil {
+		s.logger.DebugContext(ctx, "write HTTP response", "error", err)
+	}
 }
 
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+func (s *Server) writeError(ctx context.Context, w http.ResponseWriter, status int, message string) {
+	s.writeJSON(ctx, w, status, map[string]string{"error": message})
 }

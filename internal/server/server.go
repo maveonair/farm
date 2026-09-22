@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,26 +18,32 @@ type Monitor = reconcile.Tracker
 type Server struct {
 	http    *http.Server
 	monitor *Monitor
+	logger  *slog.Logger
 }
 
 func New(address string, monitor *Monitor, options ...Options) *Server {
-	server := &Server{monitor: monitor}
 	var opts Options
 	if len(options) > 0 {
 		opts = options[0]
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	server := &Server{monitor: monitor, logger: logger}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", server.live)
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /metrics", server.metrics)
 	server.routes(mux, opts)
-	mux.HandleFunc("GET /api/", func(w http.ResponseWriter, _ *http.Request) {
-		writeError(w, http.StatusNotFound, "endpoint not found")
+	mux.HandleFunc("GET /api/", func(w http.ResponseWriter, r *http.Request) {
+		server.writeError(r.Context(), w, http.StatusNotFound, "endpoint not found")
 	})
-	mux.Handle("GET /", uiHandler())
+	mux.Handle("GET /", uiHandler(logger))
 	server.http = &http.Server{
 		Addr:              address,
 		Handler:           secureHeaders(mux),
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return server

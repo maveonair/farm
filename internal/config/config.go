@@ -119,7 +119,7 @@ const (
 	ScopeGlobal       ScopeType = "global"
 )
 
-// Instance intentionally has no type field. FARM only creates VMs.
+// Instance has no type field; the Incus adapter fixes the underlying type.
 type Instance struct {
 	Image         Image             `yaml:"image"`
 	RunnerInstall RunnerInstallMode `yaml:"runner_installation"`
@@ -205,7 +205,10 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("open config: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		// Decode reports read failures. Close only releases the read-only file.
+		_ = file.Close()
+	}()
 
 	var cfg Config
 	decoder := yaml.NewDecoder(file)

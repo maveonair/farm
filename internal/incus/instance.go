@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -56,11 +57,15 @@ type ManagedInstance struct {
 	ID   string
 	Name string
 	Pool string
-	Type string
 }
 
 type Service struct {
-	client incus.InstanceServer
+	client contextClient
+}
+
+type contextClient interface {
+	incus.InstanceServer
+	WithContext(context.Context) incus.InstanceServer
 }
 
 func Connect(options ConnectOptions) (*Service, error) {
@@ -79,7 +84,7 @@ func Connect(options ConnectOptions) (*Service, error) {
 		if options.Project != "" {
 			client = client.UseProject(options.Project)
 		}
-		return &Service{client: client}, nil
+		return newService(client)
 	}
 	if endpoint.Scheme != "https" {
 		return nil, fmt.Errorf("unsupported Incus endpoint scheme %q", endpoint.Scheme)
@@ -111,7 +116,15 @@ func Connect(options ConnectOptions) (*Service, error) {
 		client = client.UseProject(options.Project)
 	}
 
-	return &Service{client: client}, nil
+	return newService(client)
+}
+
+func newService(client incus.InstanceServer) (*Service, error) {
+	contextual, ok := client.(contextClient)
+	if !ok {
+		return nil, errors.New("incus client does not support request contexts")
+	}
+	return &Service{client: contextual}, nil
 }
 
 func (s *Service) Create(ctx context.Context, spec InstanceSpec) error {
@@ -127,17 +140,18 @@ func (s *Service) Create(ctx context.Context, spec InstanceSpec) error {
 		return err
 	}
 
-	op, err := s.client.CreateInstance(request)
+	client := s.client.WithContext(ctx)
+	op, err := client.CreateInstance(request)
 	if err != nil {
-		return fmt.Errorf("create VM: %w", err)
+		return fmt.Errorf("create instance: %w", err)
 	}
 	if err := op.WaitContext(ctx); err != nil {
-		return fmt.Errorf("wait for VM creation: %w", err)
+		return fmt.Errorf("wait for instance creation: %w", err)
 	}
 
-	instance, _, err := s.client.GetInstance(spec.Name)
+	instance, _, err := client.GetInstance(spec.Name)
 	if err != nil {
-		return fmt.Errorf("verify VM: %w", err)
+		return fmt.Errorf("verify instance: %w", err)
 	}
 	if instance.Type != string(api.InstanceTypeVM) {
 		return fmt.Errorf("security violation: Incus created instance type %q", instance.Type)
@@ -150,7 +164,7 @@ func (s *Service) Managed(ctx context.Context, controller, pool string) ([]Manag
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	instances, err := s.client.GetInstancesFull(api.InstanceTypeAny)
+	instances, err := s.client.WithContext(ctx).GetInstancesFull(api.InstanceTypeAny)
 	if err != nil {
 		return nil, fmt.Errorf("list managed instances: %w", err)
 	}
@@ -163,11 +177,13 @@ func (s *Service) Managed(ctx context.Context, controller, pool string) ([]Manag
 		if pool != "" && instance.Config[poolKey] != pool {
 			continue
 		}
+		if instance.Type != string(api.InstanceTypeVM) {
+			return nil, fmt.Errorf("security violation: managed instance %q has type %q", instance.Name, instance.Type)
+		}
 		managed = append(managed, ManagedInstance{
 			ID:   instance.Config[instanceKey],
 			Name: instance.Name,
 			Pool: instance.Config[poolKey],
-			Type: instance.Type,
 		})
 	}
 	return managed, nil
@@ -179,7 +195,7 @@ func (s *Service) PushRunnerConfig(ctx context.Context, name string, data []byte
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	err := s.client.CreateInstanceFile(name, temporaryPath, incus.InstanceFileArgs{
+	err := s.client.WithContext(ctx).CreateInstanceFile(name, temporaryPath, incus.InstanceFileArgs{
 		Content:   bytes.NewReader(data),
 		UID:       0,
 		GID:       0,
@@ -236,39 +252,40 @@ func (s *Service) WaitAgent(ctx context.Context, name string) error {
 }
 
 func (s *Service) Delete(ctx context.Context, name string) error {
-	instance, _, err := s.client.GetInstance(name)
+	client := s.client.WithContext(ctx)
+	instance, _, err := client.GetInstance(name)
 	if api.StatusErrorCheck(err, http.StatusNotFound) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("get VM before deletion: %w", err)
+		return fmt.Errorf("get instance before deletion: %w", err)
 	}
 	if instance.Type != string(api.InstanceTypeVM) {
 		return fmt.Errorf("security violation: refusing to delete instance type %q", instance.Type)
 	}
 
 	if instance.IsActive() {
-		op, err := s.client.UpdateInstanceState(name, api.InstanceStatePut{
+		op, err := client.UpdateInstanceState(name, api.InstanceStatePut{
 			Action: "stop",
 			Force:  true,
 		}, "")
 		if err != nil {
-			return fmt.Errorf("stop VM: %w", err)
+			return fmt.Errorf("stop instance: %w", err)
 		}
 		if err := op.WaitContext(ctx); err != nil {
-			return fmt.Errorf("wait for VM stop: %w", err)
+			return fmt.Errorf("wait for instance stop: %w", err)
 		}
 	}
 
-	op, err := s.client.DeleteInstance(name)
+	op, err := client.DeleteInstance(name)
 	if api.StatusErrorCheck(err, http.StatusNotFound) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("delete VM: %w", err)
+		return fmt.Errorf("delete instance: %w", err)
 	}
 	if err := op.WaitContext(ctx); err != nil {
-		return fmt.Errorf("wait for VM deletion: %w", err)
+		return fmt.Errorf("wait for instance deletion: %w", err)
 	}
 	return nil
 }
@@ -276,7 +293,7 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 func (s *Service) exec(ctx context.Context, name string, command []string) error {
 	var stderr bytes.Buffer
 	dataDone := make(chan bool)
-	op, err := s.client.ExecInstance(name, api.InstanceExecPost{
+	op, err := s.client.WithContext(ctx).ExecInstance(name, api.InstanceExecPost{
 		Command:   command,
 		WaitForWS: true,
 	}, &incus.InstanceExecArgs{Stderr: &stderr, DataDone: dataDone})
@@ -309,10 +326,10 @@ func (s *Service) exec(ctx context.Context, name string, command []string) error
 
 func createRequest(spec InstanceSpec) (api.InstancesPost, error) {
 	if spec.ID == "" {
-		return api.InstancesPost{}, errors.New("missing VM ID")
+		return api.InstancesPost{}, errors.New("missing instance ID")
 	}
 	if spec.Name == "" {
-		return api.InstancesPost{}, errors.New("missing VM name")
+		return api.InstancesPost{}, errors.New("missing instance name")
 	}
 	if spec.Pool == "" {
 		return api.InstancesPost{}, errors.New("pool is required")
@@ -325,9 +342,8 @@ func createRequest(spec InstanceSpec) (api.InstancesPost, error) {
 	}
 
 	config := make(map[string]string, len(spec.Config)+4)
-	for key, value := range spec.Config {
-		config[key] = value
-	}
+	maps.Copy(config, spec.Config)
+
 	if len(spec.CloudInit) != 0 {
 		config[cloudInitKey] = string(spec.CloudInit)
 	}
@@ -337,13 +353,11 @@ func createRequest(spec InstanceSpec) (api.InstancesPost, error) {
 	config[controllerKey] = spec.Controller
 
 	return api.InstancesPost{
-		Name:  spec.Name,
-		Type:  api.InstanceTypeVM,
-		Start: true,
-		InstancePut: api.InstancePut{
-			Config:   config,
-			Profiles: append([]string(nil), spec.Profiles...),
-		},
+		Name:     spec.Name,
+		Type:     api.InstanceTypeVM,
+		Start:    true,
+		Config:   config,
+		Profiles: append([]string(nil), spec.Profiles...),
 		Source: api.InstanceSource{
 			Type:        "image",
 			Alias:       spec.Image.Alias,

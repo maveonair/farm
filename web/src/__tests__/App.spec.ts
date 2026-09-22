@@ -55,8 +55,7 @@ describe('App', () => {
       reconciliation: {
         phase: 'idle',
         condition: 'healthy',
-        last_outcome: 'succeeded',
-        completed_pools: 1,
+        active_pools: 0,
         total_pools: 1,
         active_failures: 0,
       },

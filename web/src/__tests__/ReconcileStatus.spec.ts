@@ -10,9 +10,8 @@ describe('ReconcileStatus', () => {
         reconciliation: {
           phase: 'running',
           condition: 'healthy',
-          last_outcome: 'succeeded',
           started_at: new Date().toISOString(),
-          completed_pools: 1,
+          active_pools: 2,
           total_pools: 3,
           active_failures: 0,
         },
@@ -20,6 +19,7 @@ describe('ReconcileStatus', () => {
     })
 
     expect(wrapper.text()).toContain('Reconciliation in progress')
+    expect(wrapper.text()).toContain('2 active pools')
     expect(wrapper.classes()).toContain('bg-blue-50')
     expect(wrapper.text()).not.toContain('errors')
   })

@@ -39,7 +39,7 @@ pools:
     labels: [farm-ubuntu]
     instance:
       image: farm-ubuntu-24.04
-      profiles: [farm-vm]
+      profiles: [farm-instance]
     scaling:
       min_idle: 0
       max_instances: 4

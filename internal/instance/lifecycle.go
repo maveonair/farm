@@ -64,7 +64,7 @@ func CanTransition(from, to State) bool {
 	case StateReady:
 		return to == StateRunning || to == StateCleaning
 	case StateRunning:
-		return to == StateReady || to == StateCleaning
+		return to == StateCleaning
 	case StateCleaning:
 		return to == StateFinished
 	default:

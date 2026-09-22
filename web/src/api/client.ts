@@ -37,12 +37,11 @@ export interface Summary {
   reconciliation: {
     phase: 'idle' | 'running'
     condition: 'starting' | 'healthy' | 'degraded' | 'stalled'
-    last_outcome: 'none' | 'succeeded' | 'failed'
     started_at?: string
     finished_at?: string
     last_success_at?: string
     deadline_at?: string
-    completed_pools: number
+    active_pools: number
     total_pools: number
     active_failures: number
   }

@@ -26,12 +26,9 @@ func (c *Controller) collectOrphans(ctx context.Context, pool config.Pool, scope
 	}
 	managedIDs := make(map[string]struct{}, len(managed))
 	for _, instance := range managed {
-		if instance.Type != "virtual-machine" {
-			return fmt.Errorf("security violation: managed instance %q has type %q", instance.Name, instance.Type)
-		}
 		if name, found := instanceNames[instance.ID]; found {
 			if name != instance.Name {
-				return fmt.Errorf("managed VM %q reuses instance ID for %q", instance.Name, name)
+				return fmt.Errorf("managed instance %q reuses instance ID for %q", instance.Name, name)
 			}
 			managedIDs[instance.ID] = struct{}{}
 			continue
@@ -40,7 +37,7 @@ func (c *Controller) collectOrphans(ctx context.Context, pool config.Pool, scope
 		err := c.instances.Delete(deleteCtx, instance.Name)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("delete orphaned VM %q: %w", instance.Name, err)
+			return fmt.Errorf("delete orphaned instance %q: %w", instance.Name, err)
 		}
 		c.logger.InfoContext(
 			ctx, "orphaned Instance deleted",
@@ -57,8 +54,8 @@ func (c *Controller) collectOrphans(ctx context.Context, pool config.Pool, scope
 		if _, found := managedIDs[instance.ID]; found {
 			continue
 		}
-		if err := c.cleanup(ctx, instance, scope, farmInstance.ResultFailed, farmInstance.ReasonInstanceMissing, "managed VM is missing"); err != nil {
-			return fmt.Errorf("delete runner for missing VM %q: %w", instance.Name, err)
+		if err := c.cleanup(ctx, instance, scope, farmInstance.ResultFailed, farmInstance.ReasonInstanceMissing, "managed instance is missing"); err != nil {
+			return fmt.Errorf("delete runner for missing instance %q: %w", instance.Name, err)
 		}
 	}
 
@@ -98,6 +95,9 @@ func (c *Controller) observe(ctx context.Context, instance farmInstance.Instance
 
 	switch runner.Status {
 	case forgejo.RunnerIdle:
+		if instance.State == farmInstance.StateRunning {
+			return c.cleanup(ctx, instance, scope, farmInstance.ResultSucceeded, farmInstance.ReasonJobCompleted, "")
+		}
 		return c.observeState(ctx, instance, farmInstance.StateReady)
 	case forgejo.RunnerActive:
 		return c.observeState(ctx, instance, farmInstance.StateRunning)

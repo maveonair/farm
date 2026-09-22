@@ -6,17 +6,17 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/maveonair/farm/internal/bootstrap"
 	"github.com/maveonair/farm/internal/config"
 	"github.com/maveonair/farm/internal/controller"
 	"github.com/maveonair/farm/internal/forgejo"
-	incusvm "github.com/maveonair/farm/internal/incus"
+	"github.com/maveonair/farm/internal/incus"
 	"github.com/maveonair/farm/internal/reconcile"
 	"github.com/maveonair/farm/internal/server"
 	"github.com/maveonair/farm/internal/store"
@@ -38,7 +38,6 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 	}
 	logger = logger.With("service", "farm")
 	appLogger := logger.With("controller", cfg.Controller.ID)
-	slog.SetDefault(appLogger)
 
 	token, err := readToken(cfg.Forgejo.TokenFile)
 	if err != nil {
@@ -52,7 +51,7 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 	if err != nil {
 		return err
 	}
-	vms, err := incusvm.Connect(incusvm.ConnectOptions{
+	instanceBackend, err := incus.Connect(incus.ConnectOptions{
 		Endpoint:       cfg.Incus.Endpoint,
 		Project:        cfg.Incus.Project,
 		ClientCertFile: cfg.Incus.ClientCertFile,
@@ -74,7 +73,12 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 	}
 
 	monitor := &server.Monitor{}
-	manager := controller.New(forge, vms, repository, controller.Options{
+	poolNames := make([]string, 0, len(cfg.Pools))
+	for _, pool := range cfg.Pools {
+		poolNames = append(poolNames, pool.Name)
+	}
+	monitor.Configure(poolNames, cfg.Controller.ReconcileInterval.Duration)
+	manager := controller.New(forge, instanceBackend, repository, controller.Options{
 		ID:       cfg.Controller.ID,
 		ForgeURL: cfg.Forgejo.URL,
 		Install: bootstrap.Install{
@@ -100,6 +104,7 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 			ReconcileInterval: cfg.Controller.ReconcileInterval.Duration,
 			Pools:             cfg.Pools,
 			Store:             repository,
+			Logger:            appLogger,
 		},
 	)
 	serverErr := make(chan error, 1)
@@ -112,98 +117,100 @@ func Run(ctx context.Context, path, version string) (runErr error) {
 		"pools", len(cfg.Pools),
 	)
 
-	reconcile := func() {
-		started := time.Now()
-		monitor.Start(started, started.Add(maxOperationTimeout(cfg)), len(cfg.Pools))
-		succeeded := true
-		type result struct {
-			pool     string
-			duration time.Duration
-			err      error
-		}
-		results := make(chan result, len(cfg.Pools))
-		for _, pool := range cfg.Pools {
-			go func() {
-				poolStarted := time.Now()
-				err := manager.ReconcilePool(ctx, pool)
-				results <- result{
-					pool:     pool.Name,
-					duration: time.Since(poolStarted),
-					err:      err,
-				}
-			}()
-		}
-		for range cfg.Pools {
-			result := <-results
-			if result.err != nil {
-				failure := controller.DescribeError(result.err)
-				appLogger.ErrorContext(ctx, "pool reconciliation failed",
-					"event", "reconcile_failed",
-					"pool", result.pool,
-					"stage", failure.Stage,
-					"code", failure.Code,
-					"instance_id", failure.InstanceID,
-					"instance_name", failure.InstanceName,
-					"duration", result.duration,
-					"error", result.err,
-				)
-				monitor.PoolFailure(result.pool, string(failure.Stage), string(failure.Code))
-				succeeded = false
-				continue
-			}
-			monitor.PoolSuccess(result.pool)
-			appLogger.DebugContext(ctx, "pool reconciled",
-				"event", "reconcile_completed",
+	workerCtx, stopWorkers := context.WithCancel(ctx)
+	var workers sync.WaitGroup
+	complete := func(result poolResult) {
+		finished := time.Now()
+		if result.err != nil {
+			failure := controller.DescribeError(result.err)
+			appLogger.ErrorContext(ctx, "pool reconciliation failed",
+				"event", "reconcile_failed",
 				"pool", result.pool,
+				"stage", failure.Stage,
+				"code", failure.Code,
+				"instance_id", failure.InstanceID,
+				"instance_name", failure.InstanceName,
 				"duration", result.duration,
+				"error", result.err,
 			)
+			monitor.PoolFailure(result.pool, string(failure.Stage), string(failure.Code), finished)
+			return
 		}
-		monitor.Finish(time.Now(), cfg.Controller.ReconcileInterval.Duration, succeeded)
-		appLogger.DebugContext(ctx, "reconciliation cycle completed",
-			"event", "reconcile_cycle_completed",
-			"duration", time.Since(started),
-			"success", succeeded,
+
+		monitor.PoolSuccess(result.pool, finished)
+		appLogger.DebugContext(ctx, "pool reconciled",
+			"event", "reconcile_completed",
+			"pool", result.pool,
+			"duration", result.duration,
 		)
 	}
-	reconcile()
+	for _, pool := range cfg.Pools {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			runPool(workerCtx, pool, cfg.Controller.ReconcileInterval.Duration, func(ctx context.Context, pool config.Pool) error {
+				started := time.Now()
+				deadline := started.Add(poolOperationTimeout(cfg, pool))
+				monitor.PoolStart(pool.Name, started, deadline)
+				reconcileCtx, cancel := context.WithDeadline(ctx, deadline)
+				defer cancel()
+				return manager.ReconcilePool(reconcileCtx, pool)
+			}, complete)
+		}()
+	}
 
-	timer := time.NewTimer(cfg.Controller.ReconcileInterval.Duration)
-	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		appLogger.Info("service stopping", "event", "service_stopping")
+		stopWorkers()
+		workers.Wait()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Controller.CleanupTimeout.Duration)
+		defer cancel()
+		shutdownErr := operations.Shutdown(shutdownCtx)
+		if shutdownErr != nil {
+			shutdownErr = errors.Join(shutdownErr, operations.Close())
+		}
+		shutdownErr = errors.Join(shutdownErr, <-serverErr)
+		if shutdownErr == nil {
+			appLogger.Info("service stopped", "event", "service_stopped")
+		}
+		return shutdownErr
+	case err := <-serverErr:
+		stopWorkers()
+		workers.Wait()
+		return err
+	}
+}
+
+type poolResult struct {
+	pool     string
+	duration time.Duration
+	err      error
+}
+
+func runPool(ctx context.Context, pool config.Pool, interval time.Duration, reconcile func(context.Context, config.Pool) error, complete func(poolResult)) {
 	for {
+		if ctx.Err() != nil {
+			return
+		}
+		started := time.Now()
+		err := reconcile(ctx, pool)
+		complete(poolResult{pool: pool.Name, duration: time.Since(started), err: err})
+
+		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
-			appLogger.Info("service stopping", "event", "service_stopping")
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Controller.CleanupTimeout.Duration)
-			defer cancel()
-			shutdownErr := operations.Shutdown(shutdownCtx)
-			if shutdownErr != nil {
-				shutdownErr = errors.Join(shutdownErr, operations.Close())
-			}
-			shutdownErr = errors.Join(shutdownErr, <-serverErr)
-			if shutdownErr == nil {
-				appLogger.Info("service stopped", "event", "service_stopped")
-			}
-			return shutdownErr
-		case err := <-serverErr:
-			return err
+			timer.Stop()
+			return
 		case <-timer.C:
-			reconcile()
-			timer.Reset(cfg.Controller.ReconcileInterval.Duration)
 		}
 	}
 }
 
-func maxOperationTimeout(cfg config.Config) time.Duration {
-	maximum := cfg.Forgejo.Timeout.Duration
-	for _, pool := range cfg.Pools {
-		budget := pool.Scaling.StartupTimeout.Duration +
-			time.Duration(pool.Scaling.MaxInstances)*cfg.Controller.CleanupTimeout.Duration +
-			time.Duration(pool.Scaling.MaxInstances+3)*cfg.Forgejo.Timeout.Duration
-		if budget > maximum {
-			maximum = budget
-		}
-	}
-	return maximum
+func poolOperationTimeout(cfg config.Config, pool config.Pool) time.Duration {
+	return pool.Scaling.StartupTimeout.Duration +
+		time.Duration(pool.Scaling.MaxInstances)*cfg.Controller.CleanupTimeout.Duration +
+		time.Duration(pool.Scaling.MaxInstances+3)*cfg.Forgejo.Timeout.Duration
 }
 
 func forgeHTTPClient(cfg config.Forgejo) (*http.Client, error) {
