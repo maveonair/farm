@@ -102,6 +102,11 @@ client certificate.
 Runner credentials are injected through the Incus agent. They are not stored
 in SQLite or cloud-init configuration.
 
+## Contributing
+
+Read the [contribution guidelines](CONTRIBUTING.md) before opening an issue or
+pull request.
+
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).
