@@ -1,5 +1,14 @@
 # Contributing
 
+## Documentation
+
+Install [uv](https://docs.astral.sh/uv/). Run `make docs-serve` to preview and
+`make docs-build` to check links and build the site. uv installs dependencies
+from `uv.lock`. GitHub Pages publishes documentation from `main`.
+
+Write for a reader with a specific task. Start with the useful step or answer;
+keep examples runnable and remove repeated explanation.
+
 ## License
 
 Contributions must be compatible with the [Apache License 2.0](LICENSE).

@@ -20,6 +20,10 @@ FARM provides:
 FARM manages virtual machines only. It never creates or manages Incus
 containers.
 
+[Documentation](https://maveonair.github.io/farm/) ·
+[First job](https://maveonair.github.io/farm/tutorial/first-job/) ·
+[Configuration](https://maveonair.github.io/farm/reference/configuration/)
+
 ## Quick start
 
 You need:
@@ -30,7 +34,8 @@ You need:
 - Go 1.27.1 or newer
 - Node.js `^22.18.0` or `>=24.12.0`, and pnpm 12.4.2
 
-The [setup guide](docs/setup.md) covers the Forgejo and Incus preparation.
+The [first-job tutorial](https://maveonair.github.io/farm/tutorial/first-job/) covers
+the Forgejo and Incus preparation.
 
 Build FARM and copy the example configuration:
 
@@ -78,8 +83,8 @@ jobs:
 FARM creates a VM, runs at most one job, and removes the VM and ephemeral runner
 afterward.
 
-See the [setup guide](docs/setup.md) for a complete systemd installation and
-the [configuration guide](docs/configuration.md) for field behavior.
+See the [systemd installation guide](https://maveonair.github.io/farm/how-to/install-systemd/)
+and [configuration reference](https://maveonair.github.io/farm/reference/configuration/).
 
 The interface is served from `controller.listen`, which defaults to loopback.
 Use SSH forwarding or an authenticated reverse proxy for remote access.

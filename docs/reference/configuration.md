@@ -3,7 +3,7 @@
 FARM reads one YAML file passed with `-config`. Unknown fields, duplicate image
 fields, invalid values, and multiple YAML documents are rejected.
 
-Start with [`farm.example.yaml`](../farm.example.yaml):
+Start with [`farm.example.yaml`](https://github.com/maveonair/farm/blob/main/farm.example.yaml):
 
 ```sh
 cp farm.example.yaml farm.yaml
@@ -44,7 +44,7 @@ pools:
     labels: [farm-ubuntu]
     instance:
       image: farm-ubuntu-24.04
-      profiles: [farm-instance]
+      profiles: [farm-vm]
     scaling:
       max_instances: 8
 ```
@@ -65,8 +65,8 @@ sections describe every available setting.
 
 | Field                | Meaning                                                                                |
 | -------------------- | -------------------------------------------------------------------------------------- |
-| `id`                 | Lowercase controller identity used to mark owned instances and runners. Keep it stable.      |
-| `database`           | SQLite path used to track runner and instance lifecycle state.                               |
+| `id`                 | Lowercase controller identity used to mark owned VMs and runners. Keep it stable.      |
+| `database`           | SQLite path used to track runner and VM lifecycle state.                               |
 | `reconcile_interval` | Interval between reconciliation cycles. Defaults to `5s`.                              |
 | `cleanup_timeout`    | Cleanup and shutdown deadline. Defaults to `2m`.                                       |
 | `listen`             | Address serving the UI, API, health checks, and metrics. Defaults to `127.0.0.1:8080`. |
@@ -261,26 +261,26 @@ owns runtime configuration and service activation in both modes.
 
 ```yaml
 profiles:
-  - farm-instance
+  - farm-vm
 config:
   limits.cpu: "4"
   limits.memory: 8GiB
 ```
 
-Profiles and config are passed to Incus when FARM creates the instance. Profiles are
+Profiles and config are passed to Incus when FARM creates the VM. Profiles are
 trusted configuration; review their devices carefully.
 
 ### Scaling
 
 | Field              | Meaning                                                                |
 | ------------------ | ---------------------------------------------------------------------- |
-| `min_idle`         | Number of ready instances kept available when no jobs wait. Defaults to `0`. |
-| `max_instances`    | Maximum non-finished instances, including running and cleaning instances.          |
-| `max_provisioning` | Maximum concurrent instance startups. Defaults to `2`.                       |
-| `bootstrap_attempt_limit` | Unsuccessful instance startup attempts before provisioning pauses. Defaults to `5`. |
+| `min_idle`         | Number of ready VMs kept available when no jobs wait. Defaults to `0`. |
+| `max_instances`    | Maximum non-finished VMs, including running and cleaning VMs.          |
+| `max_provisioning` | Maximum concurrent VM startups. Defaults to `2`.                       |
+| `bootstrap_attempt_limit` | Unsuccessful VM startup attempts before provisioning pauses. Defaults to `5`. |
 | `bootstrap_retry_interval` | Delay before one recovery probe. Defaults to `15m`.            |
 | `startup_timeout`  | Registration and startup deadline. Defaults to `10m`.                  |
-| `idle_timeout`     | Excess ready instance idle time. Defaults to `5m`.                           |
+| `idle_timeout`     | Excess ready VM idle time. Defaults to `5m`.                           |
 | `max_lifetime`     | Running instance lifetime. Defaults to `6h`.                           |
 
 FARM targets enough ready or bootstrapping capacity for waiting jobs plus
@@ -288,8 +288,8 @@ FARM targets enough ready or bootstrapping capacity for waiting jobs plus
 in-flight startup work.
 
 After `bootstrap_attempt_limit` consecutive unsuccessful starts, FARM stops
-creating instances for the pool. Existing runners continue operating. After
-`bootstrap_retry_interval`, FARM starts one probe instance. A successful start clears
+creating VMs for the pool. Existing runners continue operating. After
+`bootstrap_retry_interval`, FARM starts one probe VM. A successful start clears
 the failure count and resumes normal provisioning; another failure restarts the
 delay. This state persists across FARM restarts.
 

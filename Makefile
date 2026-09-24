@@ -7,7 +7,13 @@ GO_LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.
 
 .DEFAULT_GOAL := build
 
-.PHONY: build web-install web-build web-test test vet check clean
+.PHONY: build web-install web-build web-test test vet check clean docs-serve docs-build
+
+docs-serve:
+	uv run --locked --only-group docs mkdocs serve
+
+docs-build:
+	uv run --locked --only-group docs mkdocs build --strict
 
 web-install:
 	cd web && pnpm install --frozen-lockfile
