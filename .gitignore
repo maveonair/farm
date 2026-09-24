@@ -38,6 +38,8 @@ go.work.sum
 !/internal/server/dist/placeholder.txt
 farm_data/
 farm.yaml
+site/
+.venv/
 *.db
 *.db-shm
 *.db-wal

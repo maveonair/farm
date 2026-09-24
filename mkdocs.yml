@@ -1,0 +1,43 @@
+site_name: FARM
+site_description: Disposable Incus VMs for Forgejo Actions jobs
+site_url: https://maveonair.github.io/farm/
+repo_url: https://github.com/maveonair/farm
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Tutorial:
+      - Run your first job: tutorial/first-job.md
+  - How-to guides:
+      - Overview: how-to/index.md
+      - Install as a systemd service: how-to/install-systemd.md
+      - Connect to remote Incus: how-to/remote-incus.md
+      - Use an image-provided runner: how-to/image-runner.md
+      - Monitor FARM: how-to/monitor.md
+      - Troubleshoot startup and jobs: how-to/troubleshoot.md
+  - Reference:
+      - Overview: reference/index.md
+      - Configuration: reference/configuration.md
+      - CLI: reference/cli.md
+      - HTTP endpoints: reference/http.md
+  - Explanation:
+      - Overview: explanation/index.md
+      - VM and runner lifecycle: explanation/lifecycle.md
+      - Pools and scaling: explanation/pools.md
+      - Security boundaries: explanation/security.md
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
