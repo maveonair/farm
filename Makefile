@@ -1,6 +1,6 @@
 DIST_DIR := dist
 BINARY := $(DIST_DIR)/farm
-VERSION ?= $(shell version=$$(git describe --tags --always --dirty 2>/dev/null) && printf '%s' "$${version#v}" || printf dev)
+VERSION ?= $(shell version=$$(git describe --tags --always --dirty 2>/dev/null) && printf '%s' "$${version\#v}" || printf dev)
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || printf none)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GO_LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
