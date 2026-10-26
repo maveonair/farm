@@ -61,6 +61,46 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+func TestLoadListen(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		wantErr bool
+	}{
+		{name: "IPv4 loopback", address: "127.0.0.1:8080"},
+		{name: "IPv6 loopback", address: "[::1]:8080"},
+		{name: "IPv4 private", address: "192.168.1.10:8080"},
+		{name: "IPv6 non-loopback", address: "[2001:db8::1]:8080"},
+		{name: "IPv4 wildcard", address: "0.0.0.0:8080"},
+		{name: "IPv6 wildcard", address: "[::]:8080"},
+		{name: "missing host", address: ":8080", wantErr: true},
+		{name: "hostname", address: "localhost:8080", wantErr: true},
+		{name: "invalid IP", address: "999.0.0.1:8080", wantErr: true},
+		{name: "missing port", address: "127.0.0.1", wantErr: true},
+		{name: "empty port", address: "127.0.0.1:", wantErr: true},
+		{name: "unbracketed IPv6", address: "::1:8080", wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			contents := strings.Replace(validConfig, "listen: 127.0.0.1:8080", "listen: '"+test.address+"'", 1)
+			cfg, err := Load(writeConfig(t, contents))
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "controller.listen") {
+					t.Fatalf("Load() error = %v, want controller.listen error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.Controller.Listen != test.address {
+				t.Fatalf("listen = %q, want %q", cfg.Controller.Listen, test.address)
+			}
+		})
+	}
+}
+
 func TestLoadDefaultsRunnerInstallation(t *testing.T) {
 	path := writeConfig(t, validConfig)
 

@@ -1,8 +1,12 @@
 # Security boundaries
 
 The operations UI and API have no authentication. `controller.listen` defaults
-to loopback; use SSH forwarding or an authenticated reverse proxy for remote
-access. Do not expose the listener directly to untrusted networks.
+to loopback but accepts non-loopback and wildcard IP addresses. The same
+listener serves health checks and metrics without authentication or TLS.
+Anyone who can reach it can read operational data. Use SSH forwarding or an
+authenticated HTTPS reverse proxy for remote access, and restrict direct
+listener access with loopback binding or firewall rules. Do not expose the
+listener directly to untrusted networks.
 
 Give FARM a dedicated Incus project, network, and profiles. Profiles are
 trusted configuration: host filesystems, devices, or the Incus socket passed

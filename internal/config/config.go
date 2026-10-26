@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -298,10 +298,8 @@ func (c Config) Validate() error {
 	if err := c.Logging.validate(); err != nil {
 		return err
 	}
-	host, _, err := net.SplitHostPort(c.Controller.Listen)
-	ip := net.ParseIP(host)
-	if err != nil || ip == nil || !ip.IsLoopback() {
-		return errors.New("controller.listen must use a loopback IP and port")
+	if _, err := netip.ParseAddrPort(c.Controller.Listen); err != nil {
+		return errors.New("controller.listen must use an IP address and numeric port (0-65535)")
 	}
 	if err := validSecureURL("forgejo.url", c.Forgejo.URL); err != nil {
 		return err

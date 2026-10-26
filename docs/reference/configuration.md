@@ -71,6 +71,14 @@ sections describe every available setting.
 | `cleanup_timeout`    | Cleanup and shutdown deadline. Defaults to `2m`.                                       |
 | `listen`             | Address serving the UI, API, health checks, and metrics. Defaults to `127.0.0.1:8080`. |
 
+`listen` requires an IPv4 address or bracketed IPv6 address and a numeric port
+from `0` to `65535` (`0` selects an ephemeral port). Hostnames and empty hosts
+are not supported. Non-loopback addresses are allowed; `0.0.0.0:8080` and
+`[::]:8080` bind all IPv4 or IPv6 interfaces, respectively.
+
+The listener has no authentication. Keep it private or restrict access to an
+authenticated reverse proxy. See [remote access](../how-to/monitor.md#remote-access).
+
 Use each database and controller ID with only one FARM process.
 
 FARM versions its SQLite schema and refuses unsupported or unversioned

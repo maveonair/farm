@@ -29,10 +29,10 @@ See [Run your first job](https://maveonair.github.io/farm/tutorial/first-job/) i
 
 ## Security
 
-The operations UI and API do not provide authentication. Keep
-`controller.listen` on loopback and never expose it directly to untrusted
-networks. Use SSH forwarding or an authenticated reverse proxy for remote
-access.
+The operations UI and API do not provide authentication. `controller.listen`
+defaults to loopback but allows non-loopback addresses. Never expose it directly
+to untrusted networks. Use SSH forwarding or an authenticated HTTPS reverse
+proxy for remote access, and restrict direct listener access to the proxy.
 
 Use a dedicated Incus project, network, and profiles. Do not expose the Incus
 socket, host filesystems, or host devices to runner VMs. Profiles are trusted
