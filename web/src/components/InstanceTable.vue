@@ -9,35 +9,42 @@ defineProps<{ instances: Instance[] }>()
 
 <template>
   <div class="panel overflow-x-auto">
-    <table class="w-full min-w-[720px] text-sm">
+    <table class="data-table">
       <thead class="table-head">
         <tr>
-          <th class="px-4 py-3">Instance</th>
-          <th class="px-4 py-3">Pool</th>
-          <th class="px-4 py-3">State</th>
-          <th class="px-4 py-3">Runner</th>
-          <th class="px-4 py-3">Changed</th>
+          <th scope="col">Instance</th>
+          <th scope="col">Pool</th>
+          <th scope="col">State</th>
+          <th scope="col" class="text-right">Runner</th>
+          <th scope="col" class="text-right">Changed</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
-        <tr v-for="instance in instances" :key="instance.id" class="hover:bg-slate-50">
-          <td class="px-4 py-3">
+      <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+        <tr
+          v-for="instance in instances"
+          :key="instance.id"
+          class="hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+        >
+          <td>
             <RouterLink
-              class="font-medium text-violet-700 hover:underline"
+              class="font-mono text-xs font-medium text-violet-700 hover:underline dark:text-violet-300"
               :to="`/instances/${instance.id}`"
               >{{ instanceLabel({ id: instance.id, name: instance.name }) }}</RouterLink
             >
           </td>
-          <td class="px-4 py-3">
-            <RouterLink class="hover:underline" :to="`/pools/${instance.pool}`">{{
+          <td>
+            <RouterLink class="font-mono text-xs hover:underline" :to="`/pools/${instance.pool}`">{{
               instance.pool
             }}</RouterLink>
           </td>
-          <td class="px-4 py-3"><StateBadge :state="instance.state" /></td>
-          <td class="px-4 py-3 font-mono text-xs text-slate-600">
+          <td><StateBadge :state="instance.state" /></td>
+          <td class="text-right font-mono text-xs text-zinc-600 tabular-nums dark:text-zinc-300">
             {{ instance.runner_id || '—' }}
           </td>
-          <td class="px-4 py-3 text-slate-600" :title="instance.state_changed_at">
+          <td
+            class="text-right text-xs whitespace-nowrap text-zinc-500 tabular-nums dark:text-zinc-400"
+            :title="instance.state_changed_at"
+          >
             {{ relative(instance.state_changed_at) }}
           </td>
         </tr>

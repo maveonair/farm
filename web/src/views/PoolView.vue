@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import IncidentPanel from '@/components/IncidentPanel.vue'
 import InstanceTable from '@/components/InstanceTable.vue'
 import PaginationControls from '@/components/PaginationControls.vue'
@@ -33,29 +33,33 @@ const error = computed(
   <ViewState :loading :error>
     <template #content>
       <template v-if="pool">
-        <div class="mb-7">
-          <p class="eyebrow">Pool</p>
-          <h1 class="page-title mt-1">{{ pool.name }}</h1>
-          <p class="mt-2 text-sm text-slate-500">
-            {{ pool.scope.type }} · {{ scopeName(pool.scope) }}
-          </p>
+        <nav class="breadcrumbs" aria-label="Breadcrumb">
+          <RouterLink to="/pools">Pools</RouterLink>
+          <span aria-hidden="true">/</span>
+          <span class="truncate" aria-current="page">{{ pool.name }}</span>
+        </nav>
+        <div class="page-header">
+          <div class="min-w-0">
+            <h1 class="page-title font-mono">{{ pool.name }}</h1>
+            <p class="page-description">Scope: {{ scopeName(pool.scope) }}</p>
+          </div>
         </div>
         <IncidentPanel v-if="pool.incident" :incident="pool.incident" class="mb-6" />
         <div
           v-if="pool.bootstrap.paused"
-          class="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+          class="notice mb-5 border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200"
         >
           <strong>Provisioning paused.</strong> {{ pool.bootstrap.attempts }} unsuccessful starts
           reached the configured limit. The next probe is {{ relative(pool.bootstrap.retry_at) }}.
         </div>
         <div
           v-if="pool.observation_stale"
-          class="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+          class="notice mb-5 border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200"
         >
           <strong>Queue information may be stale.</strong> Forgejo was last observed
           {{ relative(pool.runtime.observed_at) }}.
         </div>
-        <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <section aria-label="Pool capacity" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <div
             v-for="item in [
               ['Waiting', pool.capacity.waiting],
@@ -65,79 +69,81 @@ const error = computed(
               ['Maximum', pool.capacity.maximum],
             ]"
             :key="String(item[0])"
-            class="panel p-4"
+            class="metric"
           >
-            <p class="text-xs text-slate-500">{{ item[0] }}</p>
-            <p class="mt-1 text-2xl font-semibold">{{ item[1] }}</p>
+            <p class="metric-label">{{ item[0] }}</p>
+            <p class="metric-value">{{ item[1] }}</p>
           </div>
         </section>
-        <section class="panel mt-6 p-5">
-          <h2 class="font-semibold">Configuration</h2>
-          <dl class="mt-4 grid gap-5 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <section class="panel mt-5 overflow-hidden">
+          <div class="section-header"><h2 class="font-semibold">Configuration</h2></div>
+          <dl class="grid gap-4 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <dt class="text-slate-500">Image</dt>
-              <dd class="mt-1 font-mono text-xs">{{ pool.image }}</dd>
+              <dt class="text-zinc-500 dark:text-zinc-400">Image</dt>
+              <dd class="mt-1 break-all font-mono text-xs">{{ pool.image }}</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Labels</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Labels</dt>
               <dd v-if="pool.labels.length" class="mt-1 flex flex-wrap gap-2">
                 <span
                   v-for="label in pool.labels"
                   :key="label"
-                  class="rounded bg-violet-50 px-2 py-1 font-mono text-xs text-violet-700"
+                  class="badge break-all bg-zinc-100 font-mono text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
                   >{{ label }}</span
                 >
               </dd>
               <dd v-else class="mt-1">None</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Minimum idle</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Minimum idle</dt>
               <dd class="mt-1">{{ pool.min_idle }}</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Max provisioning</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Max provisioning</dt>
               <dd class="mt-1">{{ pool.max_provisioning }}</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Bootstrap attempt limit</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Bootstrap attempt limit</dt>
               <dd class="mt-1">{{ pool.bootstrap.attempt_limit }}</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Startup timeout</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Startup timeout</dt>
               <dd class="mt-1">{{ pool.startup_timeout }}</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Idle timeout</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Idle timeout</dt>
               <dd class="mt-1">{{ pool.idle_timeout }}</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Max lifetime</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Max lifetime</dt>
               <dd class="mt-1">{{ pool.max_lifetime }}</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Reconciliation</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Reconciliation</dt>
               <dd class="mt-1 capitalize">{{ pool.runtime.state || 'not started' }}</dd>
             </div>
             <div v-if="pool.runtime.stage">
-              <dt class="text-slate-500">Current stage</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Current stage</dt>
               <dd class="mt-1 capitalize">{{ lifecycleLabel(pool.runtime.stage) }}</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Queue observed</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Queue observed</dt>
               <dd class="mt-1">{{ relative(pool.runtime.observed_at) }}</dd>
             </div>
             <div>
-              <dt class="text-slate-500">Last success</dt>
+              <dt class="text-zinc-500 dark:text-zinc-400">Last success</dt>
               <dd class="mt-1">{{ exact(pool.runtime.last_success_at) }}</dd>
             </div>
           </dl>
         </section>
-        <div class="mb-3 mt-8 flex items-center justify-between">
-          <h2 class="text-lg font-semibold">Instances</h2>
-          <span class="text-sm text-slate-500">Showing {{ instances.length }}</span>
+        <div class="mb-3 mt-5 flex items-center justify-between">
+          <h2 class="text-sm font-semibold">Instances</h2>
+          <span class="text-xs text-zinc-500 tabular-nums dark:text-zinc-400"
+            >Showing {{ instances.length }}</span
+          >
         </div>
         <InstanceTable v-if="instances.length" :instances />
-        <div v-else class="panel p-8 text-center text-sm text-slate-500">
+        <div v-else class="panel p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
           No instances recorded.
         </div>
         <PaginationControls v-if="pagination" :pagination />

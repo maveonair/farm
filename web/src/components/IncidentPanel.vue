@@ -19,39 +19,46 @@ const hints: Record<string, string> = {
 </script>
 
 <template>
-  <section class="rounded-md border border-red-200 bg-red-50 p-5 text-sm text-red-950">
+  <section
+    class="notice border-red-200 bg-red-50 text-red-950 dark:border-red-400/40 dark:bg-red-400/10 dark:text-red-100"
+  >
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <p class="font-semibold">Reconciliation failed</p>
-        <p class="mt-1 font-mono text-xs text-red-800">{{ incident.message }}</p>
+        <p class="mt-1 break-words font-mono text-xs text-red-800 dark:text-red-200">
+          {{ incident.message }}
+        </p>
       </div>
-      <span class="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-800">{{
+      <span class="badge bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-200">{{
         lifecycleLabel(incident.code)
       }}</span>
     </div>
     <dl class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div>
-        <dt class="text-xs text-red-700">Stage</dt>
+        <dt class="text-xs text-red-700 dark:text-red-300">Stage</dt>
         <dd class="mt-1 font-medium">{{ lifecycleLabel(incident.stage) }}</dd>
       </div>
       <div>
-        <dt class="text-xs text-red-700">First seen</dt>
+        <dt class="text-xs text-red-700 dark:text-red-300">First seen</dt>
         <dd class="mt-1" :title="exact(incident.first_seen_at)">
           {{ relative(incident.first_seen_at) }}
         </dd>
       </div>
       <div>
-        <dt class="text-xs text-red-700">Last seen</dt>
+        <dt class="text-xs text-red-700 dark:text-red-300">Last seen</dt>
         <dd class="mt-1" :title="exact(incident.last_seen_at)">
           {{ relative(incident.last_seen_at) }}
         </dd>
       </div>
       <div>
-        <dt class="text-xs text-red-700">Occurrences</dt>
+        <dt class="text-xs text-red-700 dark:text-red-300">Occurrences</dt>
         <dd class="mt-1">{{ incident.occurrences }}</dd>
       </div>
     </dl>
-    <p v-if="hints[incident.code]" class="mt-4 border-t border-red-200 pt-3 text-red-800">
+    <p
+      v-if="hints[incident.code]"
+      class="mt-4 border-t border-red-200 pt-3 text-red-800 dark:border-red-400/40 dark:text-red-200"
+    >
       {{ hints[incident.code] }}
     </p>
     <RouterLink

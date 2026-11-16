@@ -58,8 +58,11 @@ function eventSummary(event: Event) {
 </script>
 
 <template>
-  <div class="mb-7 flex flex-wrap items-end justify-between gap-4">
-    <h1 class="page-title">Activity</h1>
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Activity</h1>
+      <p class="page-description">Lifecycle events across your runner fleet.</p>
+    </div>
     <select v-model="selected" class="field" aria-label="Pool">
       <option value="">All pools</option>
       <option v-for="pool in pools" :key="pool.name">{{ pool.name }}</option>
@@ -68,22 +71,24 @@ function eventSummary(event: Event) {
 
   <ViewState :loading="eventsQuery.isPending.value" :error :empty="!events.length && page === 1">
     <template #content>
-      <div class="panel divide-y divide-slate-100">
-        <div v-for="event in events" :key="event.id" class="px-5 py-4">
+      <div class="panel divide-y divide-zinc-100 dark:divide-zinc-800">
+        <div v-for="event in events" :key="event.id" class="event-row">
           <p class="text-sm">
             <RouterLink
               :to="`/instances/${event.instance_id}`"
-              class="font-mono font-medium text-violet-700 hover:underline"
+              class="break-all font-mono text-xs font-medium text-violet-700 hover:underline dark:text-violet-300"
               >{{ instanceLabel({ id: event.instance_id, name: event.instance_name }) }}</RouterLink
             >
             <span class="ml-1">{{ eventSummary(event) }}</span>
           </p>
-          <p class="mt-1 text-xs text-slate-500">
+          <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             <RouterLink :to="`/pools/${event.pool}`" class="hover:underline">{{
               event.pool
             }}</RouterLink>
             <span> · </span>
-            <span :title="exact(event.created_at)">{{ relative(event.created_at) }}</span>
+            <span class="tabular-nums" :title="exact(event.created_at)">{{
+              relative(event.created_at)
+            }}</span>
             <template v-if="event.result || event.reason">
               <span> · </span>
               <span class="capitalize">{{
@@ -94,7 +99,10 @@ function eventSummary(event: Event) {
               }}</span>
             </template>
           </p>
-          <p v-if="event.message" class="mt-2 truncate text-xs text-red-700">
+          <p
+            v-if="event.message"
+            class="mt-2 break-words font-mono text-xs text-red-700 dark:text-red-300"
+          >
             {{ event.message }}
           </p>
         </div>

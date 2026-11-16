@@ -5,10 +5,14 @@ import { relative } from '@/lib/format'
 const props = defineProps<{ reconciliation: Summary['reconciliation'] }>()
 
 const styles = {
-  starting: 'border-blue-200 bg-blue-50 text-blue-800',
-  healthy: 'border-blue-200 bg-blue-50 text-blue-800',
-  degraded: 'border-red-200 bg-red-50 text-red-800',
-  stalled: 'border-red-200 bg-red-50 text-red-800',
+  starting:
+    'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-400/40 dark:bg-blue-400/10 dark:text-blue-200',
+  healthy:
+    'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-400/40 dark:bg-blue-400/10 dark:text-blue-200',
+  degraded:
+    'border-red-200 bg-red-50 text-red-800 dark:border-red-400/40 dark:bg-red-400/10 dark:text-red-200',
+  stalled:
+    'border-red-200 bg-red-50 text-red-800 dark:border-red-400/40 dark:bg-red-400/10 dark:text-red-200',
 }
 
 function title() {
@@ -32,7 +36,7 @@ function title() {
       reconciliation.condition === 'degraded' ||
       reconciliation.condition === 'stalled'
     "
-    class="mb-6 rounded-md border p-4 text-sm"
+    class="notice mb-5"
     :class="styles[reconciliation.condition]"
   >
     <p class="font-semibold">{{ title() }}</p>

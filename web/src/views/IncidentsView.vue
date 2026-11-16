@@ -64,9 +64,12 @@ const error = computed(() =>
 </script>
 
 <template>
-  <div class="mb-7 flex flex-wrap items-end justify-between gap-4">
-    <h1 class="page-title">Incidents</h1>
-    <div class="flex gap-2">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Incidents</h1>
+      <p class="page-description">Reconciliation failures and their resolution.</p>
+    </div>
+    <div class="toolbar">
       <select v-model="pool" class="field" aria-label="Pool">
         <option value="">All pools</option>
         <option v-for="item in pools" :key="item.name" :value="item.name">{{ item.name }}</option>
@@ -86,19 +89,19 @@ const error = computed(() =>
   >
     <template #content>
       <section class="panel overflow-hidden">
-        <div class="divide-y divide-slate-100">
+        <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
           <div
             v-for="incident in incidents"
             :key="incident.id"
-            class="grid gap-3 px-5 py-4 sm:grid-cols-[10rem_1fr_auto]"
+            class="event-row grid gap-3 sm:grid-cols-[10rem_minmax(0,1fr)_auto]"
           >
             <div>
               <RouterLink
                 :to="`/pools/${incident.pool}`"
-                class="text-sm font-medium hover:underline"
+                class="break-all font-mono text-xs font-medium text-violet-700 hover:underline dark:text-violet-300"
                 >{{ incident.pool }}</RouterLink
               >
-              <p class="mt-1 text-xs text-slate-400" :title="exact(incident.last_seen_at)">
+              <p class="mt-1 text-xs text-zinc-400" :title="exact(incident.last_seen_at)">
                 {{ relative(incident.last_seen_at) }}
               </p>
             </div>
@@ -107,20 +110,24 @@ const error = computed(() =>
                 <span class="capitalize">{{ lifecycleLabel(incident.stage) }}</span> ·
                 <span class="capitalize">{{ lifecycleLabel(incident.code) }}</span>
               </p>
-              <p class="mt-1 text-xs text-slate-500">{{ incident.message }}</p>
+              <p class="mt-1 break-words text-xs text-zinc-500 dark:text-zinc-400">
+                {{ incident.message }}
+              </p>
               <RouterLink
                 v-if="incident.instance_id"
                 :to="`/instances/${incident.instance_id}`"
-                class="mt-2 inline-block font-mono text-xs text-violet-700 hover:underline"
+                class="mt-2 inline-block break-all font-mono text-xs text-violet-700 hover:underline dark:text-violet-300"
               >
                 {{ instanceLabel({ id: incident.instance_id, name: incident.instance_name }) }}
               </RouterLink>
             </div>
-            <div class="text-right text-xs text-slate-500">
+            <div class="text-xs text-zinc-500 tabular-nums sm:text-right dark:text-zinc-400">
               <span
-                class="rounded-full px-2 py-1 font-medium"
+                class="badge"
                 :class="
-                  incident.resolved_at ? 'bg-slate-100 text-slate-600' : 'bg-red-100 text-red-700'
+                  incident.resolved_at
+                    ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+                    : 'bg-red-100 text-red-700 dark:bg-red-400/10 dark:text-red-300'
                 "
               >
                 {{ incident.resolved_at ? 'Resolved' : 'Open' }}

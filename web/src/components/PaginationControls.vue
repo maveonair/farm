@@ -26,12 +26,15 @@ function navigate(page: number) {
 <template>
   <nav
     v-if="pagination.page > 1 || pagination.has_next"
-    class="mt-4 flex justify-end gap-2"
+    class="mt-3 flex flex-wrap items-center justify-end gap-2"
     aria-label="Pagination"
   >
+    <span class="mr-auto text-xs text-zinc-500 tabular-nums dark:text-zinc-400"
+      >Page {{ pagination.page }}</span
+    >
     <button
       type="button"
-      class="field disabled:cursor-not-allowed disabled:opacity-50"
+      class="button"
       :disabled="pagination.page === 1"
       aria-label="Previous page"
       @click="navigate(pagination.page - 1)"
@@ -40,7 +43,7 @@ function navigate(page: number) {
     </button>
     <button
       type="button"
-      class="field disabled:cursor-not-allowed disabled:opacity-50"
+      class="button"
       :disabled="!pagination.has_next"
       aria-label="Next page"
       @click="navigate(pagination.page + 1)"

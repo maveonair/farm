@@ -34,11 +34,14 @@ export function exact(value?: string): string {
 }
 
 export function scopeName(scope: { type: string; owner?: string; repository?: string }): string {
-  if (scope.type === 'repository') {
-    return `${scope.owner}/${scope.repository}`
+  const type = scope.type.charAt(0).toUpperCase() + scope.type.slice(1)
+
+  if (scope.type === 'repository' && scope.owner && scope.repository) {
+    return `${type} · ${scope.owner}/${scope.repository}`
   }
-  if (scope.type === 'organization') {
-    return scope.owner || scope.type
+  if (scope.type === 'organization' && scope.owner) {
+    return `${type} · ${scope.owner}`
   }
-  return scope.type
+
+  return type
 }

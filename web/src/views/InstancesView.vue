@@ -61,17 +61,18 @@ const error = computed(() =>
 </script>
 
 <template>
-  <div class="mb-7 flex flex-wrap items-end justify-between gap-4">
+  <div class="page-header">
     <div>
-      <h1 class="page-title mt-1">Instances</h1>
+      <h1 class="page-title">Instances</h1>
+      <p class="page-description">Runner instances across all pools.</p>
     </div>
-    <div class="flex gap-2">
-      <select v-model="pool" class="field">
+    <div class="toolbar">
+      <select v-model="pool" class="field" aria-label="Pool">
         <option value="">All pools</option>
         <option v-for="item in pools" :key="item.name" :value="item.name">
           {{ item.name }}
         </option></select
-      ><select v-model="state" class="field capitalize">
+      ><select v-model="state" class="field capitalize" aria-label="State">
         <option value="">All states</option>
         <option v-for="item in states" :key="item" :value="item">{{ item }}</option>
       </select>

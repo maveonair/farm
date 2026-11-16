@@ -12,6 +12,75 @@ const View = { template: '<div />' }
 describe('App', () => {
   afterEach(() => vi.restoreAllMocks())
 
+  async function mountNavigation() {
+    vi.spyOn(api, 'summary').mockRejectedValue(new Error('offline'))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: ['/', '/pools', '/instances', '/activity', '/incidents'].map((path) => ({
+        path,
+        component: View,
+      })),
+    })
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router, [VueQueryPlugin, { queryClient: newTestQueryClient() }]],
+      },
+    })
+
+    return { wrapper, router }
+  }
+
+  it('lists the five sections in the sidebar', async () => {
+    const { wrapper } = await mountNavigation()
+    const navigation = wrapper.get('aside nav')
+
+    expect(navigation.attributes('aria-label')).toBe('Primary navigation')
+    expect(navigation.findAll('a').map((link) => link.text())).toEqual([
+      'Overview',
+      'Pools',
+      'Instances',
+      'Activity',
+      'Incidents',
+    ])
+    expect(navigation.get('a[href="/"]').attributes('aria-current')).toBe('page')
+    wrapper.unmount()
+  })
+
+  it('toggles mobile navigation and closes it on Escape', async () => {
+    const { wrapper } = await mountNavigation()
+    const toggle = wrapper.get('button[aria-controls="primary-navigation"]')
+
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('aside').classes()).toContain('hidden')
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('aside').classes()).not.toContain('hidden')
+
+    await wrapper.get('nav').trigger('keydown', { key: 'Escape' })
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('closes mobile navigation after navigation, including the current page', async () => {
+    const { wrapper, router } = await mountNavigation()
+    const toggle = wrapper.get('button[aria-controls="primary-navigation"]')
+
+    await toggle.trigger('click')
+    await wrapper.get('nav a[href="/"]').trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await toggle.trigger('click')
+    await router.push('/pools')
+    await flushPromises()
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('nav a[href="/pools"]').attributes('aria-current')).toBe('page')
+    wrapper.unmount()
+  })
+
   it.each([
     ['/pools/ubuntu', '/pools'],
     ['/instances/runner-1', '/instances'],

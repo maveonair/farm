@@ -61,6 +61,7 @@ describe('PoolView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        { path: '/pools', component: { template: '<div />' } },
         { path: '/pools/:name', component: PoolView },
         { path: '/instances/:id', component: { template: '<div />' } },
       ],
@@ -82,8 +83,14 @@ describe('PoolView', () => {
     expect(configuration?.text()).toContain('ubuntu-24.04')
     expect(configuration?.text()).toContain('x64')
     expect(wrapper.text()).toContain('Provisioning paused')
+    expect(wrapper.get('.page-description').text()).toBe('Scope: Organization · farm')
     expect(getInstances.mock.calls[0]?.[0]?.get('per_page')).toBe('10')
     expect(wrapper.text()).not.toContain('No instances recorded.')
+    const breadcrumb = wrapper.get('nav[aria-label="Breadcrumb"]')
+    expect(breadcrumb.get('a').attributes('href')).toBe('/pools')
+    expect(breadcrumb.get('[aria-current="page"]').text()).toBe('ubuntu')
+    expect(wrapper.get('section[aria-label="Pool capacity"]').text()).toContain('Maximum')
+    expect(wrapper.findAll('th[scope="col"]')).toHaveLength(5)
     wrapper.unmount()
   })
 })

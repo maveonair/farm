@@ -29,15 +29,16 @@ const error = computed(
 </script>
 
 <template>
-  <div class="mb-7 flex items-end justify-between">
+  <div class="page-header">
     <div>
-      <h1 class="page-title mt-1">Overview</h1>
+      <h1 class="page-title">Overview</h1>
+      <p class="page-description">Runner capacity and controller activity.</p>
     </div>
   </div>
   <ViewState :loading :error>
     <template #content>
       <ReconcileStatus v-if="summary" :reconciliation="summary.reconciliation" />
-      <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Runner capacity" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div
           v-for="item in [
             ['Waiting jobs', summary?.waiting ?? 0],
@@ -46,36 +47,42 @@ const error = computed(
             ['Bootstrapping', summary?.counts.bootstrapping ?? 0],
           ]"
           :key="String(item[0])"
-          class="panel p-5"
+          class="metric"
         >
-          <p class="text-sm text-slate-500">{{ item[0] }}</p>
-          <p class="mt-2 text-3xl font-semibold tracking-tight">{{ item[1] }}</p>
+          <p class="metric-label">{{ item[0] }}</p>
+          <p class="metric-value">{{ item[1] }}</p>
         </div>
       </section>
-      <div class="mt-6 grid gap-6 xl:grid-cols-[2fr_1fr]">
+      <div class="mt-5 grid gap-5 xl:grid-cols-[2fr_1fr]">
         <section class="panel overflow-hidden">
-          <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div class="section-header">
             <h2 class="font-semibold">Pool capacity</h2>
-            <RouterLink to="/pools" class="text-sm text-violet-700 hover:underline"
+            <RouterLink
+              to="/pools"
+              class="text-sm text-violet-700 hover:underline dark:text-violet-300"
               >All pools</RouterLink
             >
           </div>
-          <div class="divide-y divide-slate-100">
+          <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
             <RouterLink
               v-for="pool in pools"
               :key="pool.name"
               :to="`/pools/${pool.name}`"
-              class="grid grid-cols-[1fr_auto] gap-5 px-5 py-4 hover:bg-slate-50"
+              class="grid gap-3 px-4 py-3 hover:bg-zinc-50 sm:grid-cols-[minmax(0,1fr)_auto] dark:hover:bg-zinc-800/60"
             >
               <div>
-                <div class="font-medium">{{ pool.name }}</div>
-                <div class="mt-1 text-xs text-slate-500">
+                <div
+                  class="break-words font-mono text-sm font-medium text-violet-700 dark:text-violet-300"
+                >
+                  {{ pool.name }}
+                </div>
+                <div class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   {{ pool.capacity.running }} running · {{ pool.capacity.ready }} ready ·
                   {{ pool.capacity.waiting }} waiting
                 </div>
               </div>
               <div class="w-36 self-center">
-                <div class="mb-1 flex justify-between text-xs text-slate-500">
+                <div class="mb-1 flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
                   <span>Capacity</span
                   ><span
                     >{{
@@ -98,35 +105,41 @@ const error = computed(
                 />
               </div>
             </RouterLink>
-            <p v-if="!pools.length" class="p-6 text-sm text-slate-500">
+            <p v-if="!pools.length" class="p-6 text-sm text-zinc-500 dark:text-zinc-400">
               Waiting for the first reconciliation.
             </p>
           </div>
         </section>
         <section class="panel overflow-hidden">
-          <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div class="section-header">
             <h2 class="font-semibold">Recent activity</h2>
-            <RouterLink to="/activity" class="text-sm text-violet-700 hover:underline"
+            <RouterLink
+              to="/activity"
+              class="text-sm text-violet-700 hover:underline dark:text-violet-300"
               >View all</RouterLink
             >
           </div>
-          <div class="divide-y divide-slate-100">
-            <div v-for="event in events" :key="event.id" class="px-5 py-3 text-sm">
+          <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
+            <div v-for="event in events" :key="event.id" class="event-row text-sm">
               <p>
                 <RouterLink
                   :to="`/instances/${event.instance_id}`"
-                  class="font-medium hover:underline"
+                  class="break-all font-mono text-xs font-medium text-violet-700 hover:underline dark:text-violet-300"
                   >{{
                     instanceLabel({ id: event.instance_id, name: event.instance_name })
                   }}</RouterLink
                 >
-                <span class="text-slate-500 ml-1">{{ event.kind.replace('_', ' ') }}</span>
+                <span class="text-zinc-500 ml-1 dark:text-zinc-400">{{
+                  event.kind.replace('_', ' ')
+                }}</span>
               </p>
-              <p class="mt-1 text-xs text-slate-400">
+              <p class="mt-1 text-xs text-zinc-400">
                 {{ event.pool }} · {{ relative(event.created_at) }}
               </p>
             </div>
-            <p v-if="!events.length" class="p-6 text-sm text-slate-500">No lifecycle events yet.</p>
+            <p v-if="!events.length" class="p-6 text-sm text-zinc-500 dark:text-zinc-400">
+              No lifecycle events yet.
+            </p>
           </div>
         </section>
       </div>
